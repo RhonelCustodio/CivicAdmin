@@ -640,7 +640,6 @@
                                                     id="sort-icon-name"></i>
                                             </th>
                                             <th class="px-4 py-3.5 text-left">Event</th>
-                                            <th class="px-4 py-3.5 text-left">Activity</th>
                                             <th class="px-4 py-3.5 text-left cursor-pointer hover:bg-slate-100 transition-all select-none"
                                                 onclick="sortActivityLogs('date')">
                                                 Date & Time
@@ -653,7 +652,7 @@
                                     </thead>
                                     <tbody id="activity-logs-tbody" class="divide-y divide-slate-100">
                                         <tr>
-                                            <td colspan="6" class="px-4 py-10 text-center text-slate-400">
+                                            <td colspan="5" class="px-4 py-10 text-center text-slate-400">
                                                 <i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading activity logs...
                                             </td>
                                         </tr>
@@ -1394,12 +1393,6 @@
                     <div id="admin-modal-event-desc"
                         class="p-4 bg-slate-50 border border-slate-200 rounded-xl mt-4 leading-relaxed text-slate-700">
                     </div>
-                </div>
-                <div class="mt-6 pt-4 border-t border-slate-200 text-right">
-                    <button onclick="closeModal('admin-view-event-modal')"
-                        class="btn-primary px-5 py-2.5 rounded-xl font-bold text-sm shadow-md">
-                        Close
-                    </button>
                 </div>
             </div>
         </div>
