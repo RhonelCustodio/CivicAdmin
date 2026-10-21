@@ -2166,293 +2166,293 @@ window.viewVerificationFile = async function (id) {
 };
 
 // ==================== ANTI-DEBUGGING & DEVELOPER TOOLS PROTECTION ====================
-// (function () {
-//   // Disable right-click context menu
-//   document.addEventListener("contextmenu", function (e) {
-//     e.preventDefault();
-//     return false;
-//   });
+(function () {
+  // Disable right-click context menu
+  document.addEventListener("contextmenu", function (e) {
+    e.preventDefault();
+    return false;
+  });
 
-//   // Disable keyboard shortcuts for developer tools
-//   document.addEventListener("keydown", function (e) {
-//     // F12 key
-//     if (e.keyCode === 123) {
-//       e.preventDefault();
-//       return false;
-//     }
+  // Disable keyboard shortcuts for developer tools
+  document.addEventListener("keydown", function (e) {
+    // F12 key
+    if (e.keyCode === 123) {
+      e.preventDefault();
+      return false;
+    }
 
-//     // Ctrl+Shift+I (Chrome, Firefox Dev Tools)
-//     if (e.ctrlKey && e.shiftKey && e.keyCode === 73) {
-//       e.preventDefault();
-//       return false;
-//     }
+    // Ctrl+Shift+I (Chrome, Firefox Dev Tools)
+    if (e.ctrlKey && e.shiftKey && e.keyCode === 73) {
+      e.preventDefault();
+      return false;
+    }
 
-//     // Ctrl+Shift+J (Chrome Console)
-//     if (e.ctrlKey && e.shiftKey && e.keyCode === 74) {
-//       e.preventDefault();
-//       return false;
-//     }
+    // Ctrl+Shift+J (Chrome Console)
+    if (e.ctrlKey && e.shiftKey && e.keyCode === 74) {
+      e.preventDefault();
+      return false;
+    }
 
-//     // Ctrl+Shift+C (Chrome Element Selector)
-//     if (e.ctrlKey && e.shiftKey && e.keyCode === 67) {
-//       e.preventDefault();
-//       return false;
-//     }
+    // Ctrl+Shift+C (Chrome Element Selector)
+    if (e.ctrlKey && e.shiftKey && e.keyCode === 67) {
+      e.preventDefault();
+      return false;
+    }
 
-//     // Ctrl+U (View Source)
-//     if (e.ctrlKey && e.keyCode === 85) {
-//       e.preventDefault();
-//       return false;
-//     }
+    // Ctrl+U (View Source)
+    if (e.ctrlKey && e.keyCode === 85) {
+      e.preventDefault();
+      return false;
+    }
 
-//     // Ctrl+S (Save Page)
-//     if (e.ctrlKey && e.keyCode === 83) {
-//       e.preventDefault();
-//       return false;
-//     }
+    // Ctrl+S (Save Page)
+    if (e.ctrlKey && e.keyCode === 83) {
+      e.preventDefault();
+      return false;
+    }
 
-//     // Ctrl+Shift+K (Firefox Console)
-//     if (e.ctrlKey && e.shiftKey && e.keyCode === 75) {
-//       e.preventDefault();
-//       return false;
-//     }
+    // Ctrl+Shift+K (Firefox Console)
+    if (e.ctrlKey && e.shiftKey && e.keyCode === 75) {
+      e.preventDefault();
+      return false;
+    }
 
-//     // Ctrl+Shift+E (Firefox Network Tab)
-//     if (e.ctrlKey && e.shiftKey && e.keyCode === 69) {
-//       e.preventDefault();
-//       return false;
-//     }
+    // Ctrl+Shift+E (Firefox Network Tab)
+    if (e.ctrlKey && e.shiftKey && e.keyCode === 69) {
+      e.preventDefault();
+      return false;
+    }
 
-//     // F5 and Ctrl+R (Refresh - optional, might want to allow refresh)
-//     // if (e.keyCode === 116 || (e.ctrlKey && e.keyCode === 82)) {
-//     //     e.preventDefault();
-//     //     return false;
-//     // }
-//   });
+    // F5 and Ctrl+R (Refresh - optional, might want to allow refresh)
+    // if (e.keyCode === 116 || (e.ctrlKey && e.keyCode === 82)) {
+    //     e.preventDefault();
+    //     return false;
+    // }
+  });
 
-//   // Detect if Developer Tools is open using various methods
-//   function detectDevTools() {
-//     const threshold = 160;
-//     const widthThreshold = window.outerWidth - window.innerWidth > threshold;
-//     const heightThreshold = window.outerHeight - window.innerHeight > threshold;
+  // Detect if Developer Tools is open using various methods
+  function detectDevTools() {
+    const threshold = 160;
+    const widthThreshold = window.outerWidth - window.innerWidth > threshold;
+    const heightThreshold = window.outerHeight - window.innerHeight > threshold;
 
-//     // Method 1: Window size difference detection
-//     if (widthThreshold || heightThreshold) {
-//       handleDevToolsDetected();
-//     }
+    // Method 1: Window size difference detection
+    if (widthThreshold || heightThreshold) {
+      handleDevToolsDetected();
+    }
 
-//     // Method 2: Console.log timing detection
-//     const startTime = performance.now();
-//     debugger;
-//     const endTime = performance.now();
+    // Method 2: Console.log timing detection
+    const startTime = performance.now();
+    debugger;
+    const endTime = performance.now();
 
-//     if (endTime - startTime > 100) {
-//       handleDevToolsDetected();
-//     }
+    if (endTime - startTime > 100) {
+      handleDevToolsDetected();
+    }
 
-//     // Method 3: Firefox specific detection
-//     if (window.devtools && window.devtools.open) {
-//       handleDevToolsDetected();
-//     }
-//   }
+    // Method 3: Firefox specific detection
+    if (window.devtools && window.devtools.open) {
+      handleDevToolsDetected();
+    }
+  }
 
-//   // Method 4: Using requestAnimationFrame to detect console
-//   let devtoolsOpen = false;
-//   const element = new Image();
-//   Object.defineProperty(element, "id", {
-//     get: function () {
-//       devtoolsOpen = true;
-//       handleDevToolsDetected();
-//     },
-//   });
+  // Method 4: Using requestAnimationFrame to detect console
+  let devtoolsOpen = false;
+  const element = new Image();
+  Object.defineProperty(element, "id", {
+    get: function () {
+      devtoolsOpen = true;
+      handleDevToolsDetected();
+    },
+  });
 
-//   setInterval(function () {
-//     devtoolsOpen = false;
-//     console.log("%c", element);
-//     if (devtoolsOpen) {
-//       handleDevToolsDetected();
-//     }
-//   }, 1000);
+  setInterval(function () {
+    devtoolsOpen = false;
+    console.log("%c", element);
+    if (devtoolsOpen) {
+      handleDevToolsDetected();
+    }
+  }, 1000);
 
-//   // Method 5: Detect Firebug
-//   if (window.console && (window.console.firebug || window.console.exception)) {
-//     handleDevToolsDetected();
-//   }
+  // Method 5: Detect Firebug
+  if (window.console && (window.console.firebug || window.console.exception)) {
+    handleDevToolsDetected();
+  }
 
-//   function handleDevToolsDetected() {
-//     // Clear console
-//     console.clear();
+  function handleDevToolsDetected() {
+    // Clear console
+    console.clear();
 
-//     // Show warning
-//     console.log(
-//       "%c⚠️ WARNING ⚠️",
-//       "color: red; font-size: 30px; font-weight: bold;",
-//     );
-//     console.log(
-//       "%cDeveloper tools detected!",
-//       "color: orange; font-size: 20px;",
-//     );
-//     console.log(
-//       "%cThis action has been logged and reported to the administrator.",
-//       "color: red; font-size: 14px;",
-//     );
-//     console.log(
-//       "%cPlease close developer tools immediately.",
-//       "color: orange; font-size: 14px;",
-//     );
+    // Show warning
+    console.log(
+      "%c⚠️ WARNING ⚠️",
+      "color: red; font-size: 30px; font-weight: bold;",
+    );
+    console.log(
+      "%cDeveloper tools detected!",
+      "color: orange; font-size: 20px;",
+    );
+    console.log(
+      "%cThis action has been logged and reported to the administrator.",
+      "color: red; font-size: 14px;",
+    );
+    console.log(
+      "%cPlease close developer tools immediately.",
+      "color: orange; font-size: 14px;",
+    );
 
-//     // Optional: Log the attempt
-//     if (typeof loggedInAdmin !== "undefined" && loggedInAdmin) {
-//       try {
-//         // You can add Firestore logging here if needed
-//         // addDoc(collection(db, 'security_logs'), { ... });
-//       } catch (e) { }
-//     }
+    // Optional: Log the attempt
+    if (typeof loggedInAdmin !== "undefined" && loggedInAdmin) {
+      try {
+        // You can add Firestore logging here if needed
+        // addDoc(collection(db, 'security_logs'), { ... });
+      } catch (e) { }
+    }
 
-//     // Optional: Show modal warning
-//     showDevToolsWarning();
-//   }
+    // Optional: Show modal warning
+    showDevToolsWarning();
+  }
 
-//   function showDevToolsWarning() {
-//     // Remove existing warning if any
-//     const existing = document.getElementById("devtools-warning");
-//     if (existing) existing.remove();
+  function showDevToolsWarning() {
+    // Remove existing warning if any
+    const existing = document.getElementById("devtools-warning");
+    if (existing) existing.remove();
 
-//     const warningModal = document.createElement("div");
-//     warningModal.id = "devtools-warning";
-//     warningModal.style.cssText = `
-//             position: fixed;
-//             top: 0;
-//             left: 0;
-//             right: 0;
-//             bottom: 0;
-//             background: rgba(0, 0, 0, 0.9);
-//             z-index: 999999;
-//             display: flex;
-//             align-items: center;
-//             justify-content: center;
-//             padding: 20px;
-//         `;
+    const warningModal = document.createElement("div");
+    warningModal.id = "devtools-warning";
+    warningModal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 999999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        `;
 
-//     warningModal.innerHTML = `
-//             <div style="
-//                 background: white;
-//                 border-radius: 20px;
-//                 padding: 40px;
-//                 max-width: 500px;
-//                 width: 100%;
-//                 text-align: center;
-//                 box-shadow: 0 25px 50px rgba(0,0,0,0.5);
-//                 animation: fadeInUp 0.3s ease-out;
-//             ">
-//                 <div style="
-//                     width: 80px;
-//                     height: 80px;
-//                     background: #fee2e2;
-//                     color: #dc2626;
-//                     border-radius: 50%;
-//                     display: flex;
-//                     align-items: center;
-//                     justify-content: center;
-//                     margin: 0 auto 20px;
-//                     font-size: 40px;
-//                 ">
-//                     <i class="fa-solid fa-triangle-exclamation"></i>
-//                 </div>
-//                 <h2 style="
-//                     color: #1f2937;
-//                     font-size: 24px;
-//                     font-weight: 800;
-//                     margin-bottom: 10px;
-//                 ">⚠️ Security Warning</h2>
-//                 <p style="
-//                     color: #6b7280;
-//                     font-size: 14px;
-//                     margin-bottom: 10px;
-//                     line-height: 1.6;
-//                 ">
-//                     Developer tools have been detected on this page.
-//                 </p>
-//                 <p style="
-//                     color: #dc2626;
-//                     font-size: 13px;
-//                     font-weight: 600;
-//                     margin-bottom: 20px;
-//                     background: #fee2e2;
-//                     padding: 12px;
-//                     border-radius: 10px;
-//                 ">
-//                     Using developer tools is strictly prohibited. This action has been logged.
-//                 </p>
-//                 <button onclick="document.getElementById('devtools-warning').remove()" style="
-//                     background: #2563eb;
-//                     color: white;
-//                     border: none;
-//                     padding: 12px 30px;
-//                     border-radius: 10px;
-//                     font-size: 14px;
-//                     font-weight: 600;
-//                     cursor: pointer;
-//                     transition: all 0.3s;
-//                 " onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">
-//                     <i class="fa-solid fa-check mr-2"></i>I Understand
-//                 </button>
-//             </div>
-//         `;
+    warningModal.innerHTML = `
+            <div style="
+                background: white;
+                border-radius: 20px;
+                padding: 40px;
+                max-width: 500px;
+                width: 100%;
+                text-align: center;
+                box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+                animation: fadeInUp 0.3s ease-out;
+            ">
+                <div style="
+                    width: 80px;
+                    height: 80px;
+                    background: #fee2e2;
+                    color: #dc2626;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin: 0 auto 20px;
+                    font-size: 40px;
+                ">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <h2 style="
+                    color: #1f2937;
+                    font-size: 24px;
+                    font-weight: 800;
+                    margin-bottom: 10px;
+                ">⚠️ Security Warning</h2>
+                <p style="
+                    color: #6b7280;
+                    font-size: 14px;
+                    margin-bottom: 10px;
+                    line-height: 1.6;
+                ">
+                    Developer tools have been detected on this page.
+                </p>
+                <p style="
+                    color: #dc2626;
+                    font-size: 13px;
+                    font-weight: 600;
+                    margin-bottom: 20px;
+                    background: #fee2e2;
+                    padding: 12px;
+                    border-radius: 10px;
+                ">
+                    Using developer tools is strictly prohibited. This action has been logged.
+                </p>
+                <button onclick="document.getElementById('devtools-warning').remove()" style="
+                    background: #2563eb;
+                    color: white;
+                    border: none;
+                    padding: 12px 30px;
+                    border-radius: 10px;
+                    font-size: 14px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.3s;
+                " onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">
+                    <i class="fa-solid fa-check mr-2"></i>I Understand
+                </button>
+            </div>
+        `;
 
-//     document.body.appendChild(warningModal);
-//   }
+    document.body.appendChild(warningModal);
+  }
 
-//   // Run detection periodically
-//   setInterval(detectDevTools, 2000);
+  // Run detection periodically
+  setInterval(detectDevTools, 2000);
 
-//   // Prevent dragging of images and links
-//   document.addEventListener("dragstart", function (e) {
-//     if (e.target.tagName === "IMG" || e.target.tagName === "A") {
-//       e.preventDefault();
-//       return false;
-//     }
-//   });
+  // Prevent dragging of images and links
+  document.addEventListener("dragstart", function (e) {
+    if (e.target.tagName === "IMG" || e.target.tagName === "A") {
+      e.preventDefault();
+      return false;
+    }
+  });
 
-//   // Prevent text selection (optional - might affect usability)
-//   // document.addEventListener('selectstart', function(e) {
-//   //     e.preventDefault();
-//   //     return false;
-//   // });
+  // Prevent text selection (optional - might affect usability)
+  // document.addEventListener('selectstart', function(e) {
+  //     e.preventDefault();
+  //     return false;
+  // });
 
-//   // // Disable copy/paste (optional)
-//   // document.addEventListener('copy', function(e) {
-//   //     e.preventDefault();
-//   //     return false;
-//   // });
-//   // document.addEventListener('cut', function(e) {
-//   //     e.preventDefault();
-//   //     return false;
-//   // });
+  // // Disable copy/paste (optional)
+  // document.addEventListener('copy', function(e) {
+  //     e.preventDefault();
+  //     return false;
+  // });
+  // document.addEventListener('cut', function(e) {
+  //     e.preventDefault();
+  //     return false;
+  // });
 
-//   // Override console methods to prevent logging
-//   const noop = function () { };
-//   const methods = [
-//     "log",
-//     "debug",
-//     "warn",
-//     "info",
-//     "error",
-//     "exception",
-//     "table",
-//     "trace",
-//   ];
+  // Override console methods to prevent logging
+  const noop = function () { };
+  const methods = [
+    "log",
+    "debug",
+    "warn",
+    "info",
+    "error",
+    "exception",
+    "table",
+    "trace",
+  ];
 
-//   // Uncomment to completely disable console
-//   // methods.forEach(function(method) {
-//   //     console[method] = noop;
-//   // });
+  // Uncomment to completely disable console
+  // methods.forEach(function(method) {
+  //     console[method] = noop;
+  // });
 
-//   console.log(
-//     "%c🔒 Admin Panel Security Active",
-//     "color: green; font-size: 14px; font-weight: bold;",
-//   );
-// })();
+  console.log(
+    "%c🔒 Admin Panel Security Active",
+    "color: green; font-size: 14px; font-weight: bold;",
+  );
+})();
 
 // ===== VIEW VERIFICATION FILE (UPDATED WITH DOWNLOAD IN MODAL) =====
 window.viewVerificationFile = async function (id) {
