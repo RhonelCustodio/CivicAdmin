@@ -1391,10 +1391,7 @@ function initDonationsListener() {
       renderSortedDonations();
       refreshActionBadges();
       const cf = dropdown?.value || "all";
-      // Always update count after render; only re-filter if a non-all filter is active
-      if (cf !== "all") {
-        window.filterDonations(cf);
-      }
+      if (cf !== "all") window.filterDonations(cf);
     },
   );
 }
@@ -1496,12 +1493,6 @@ function renderSortedDonations() {
     html += `<tr class="${isNew ? "row-new " : ""}hover:bg-blue-50/60 cursor-pointer border-b table-row donation-row transition-colors" data-status="${effStatus}" onclick="openDonationScreenshotModal('${id}')"><td class="px-5 py-4 font-bold">${d.donorName || "Anonymous"}${isNew ? " " + newChipHtml() : ""}</td><td class="px-5 py-4 font-bold text-emerald-800">${amt}</td><td class="px-5 py-4" onclick="event.stopPropagation(); openDonationScreenshotModal('${id}');">${proofCell}</td><td class="px-5 py-4 text-sm">${d.purpose || "N/A"}</td><td class="px-5 py-4 text-xs text-stone-500">${cd}</td><td class="px-5 py-4">${sb}</td><td class="px-4 py-4 text-right" onclick="event.stopPropagation()">${refundBtn}<button type="button" onclick="deleteDonationRecord('${escId}', '${escDonor}')" class="w-8 h-8 rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all inline-flex items-center justify-center" title="Delete specific donation record"><i class="fa-solid fa-trash-can text-xs"></i></button></td></tr>`;
   });
   tbody.innerHTML = html;
-  // Update record count immediately after rendering (before any filter is active)
-  const rc = document.getElementById("donation-result-count");
-  if (rc) {
-    const total = document.querySelectorAll(".donation-row").length;
-    rc.textContent = `${total} ${total === 1 ? "record" : "records"}`;
-  }
 }
 
 // ========================================== VOLUNTEER FUNCTIONS ==========================================
@@ -2014,12 +2005,6 @@ function renderSortedVolunteers() {
     html += `<tr class="${isNew ? "row-new " : ""}hover:bg-blue-50/60 cursor-pointer border-b table-row volunteer-row transition-colors" data-status="${v.status || "Pending"}" onclick="openVolunteerDetailsModal('${id}')"><td class="px-4 py-3"><div class="font-bold text-stone-900">${v.name || "N/A"}${isNew ? " " + newChipHtml() : ""}</div>${notesDisplay}</td><td class="px-4 py-3">${contactDisplay}</td><td class="px-4 py-3"><div class="text-sm font-semibold text-stone-800">${skillsDisplay}</div>${experienceDisplay}</td><td class="px-4 py-3 text-sm text-stone-600">${v.availability || "N/A"}</td><td class="px-4 py-3" onclick="event.stopPropagation()">${docDisplay}</td><td class="px-4 py-3">${sb}</td><td class="px-4 py-3 text-right" onclick="event.stopPropagation()"><button type="button" onclick="deleteVolunteerRecord('${escVid}', '${escVname}')" class="w-8 h-8 rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all inline-flex items-center justify-center" title="Delete specific volunteer record"><i class="fa-solid fa-trash-can text-xs"></i></button></td></tr>`;
   });
   tbody.innerHTML = html;
-  // Update record count immediately after rendering (before any filter is active)
-  const rc = document.getElementById("donation-result-count");
-  if (rc) {
-    const total = document.querySelectorAll(".donation-row").length;
-    rc.textContent = `${total} ${total === 1 ? "record" : "records"}`;
-  }
 }
 window.viewVerificationFile = async function (id) {
   window.showLoading();
