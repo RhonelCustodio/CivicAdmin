@@ -193,6 +193,124 @@ let volunteerSortField = "date",
   allVolunteers = [];
 let allContactMessages = [];
 
+// ============================================================
+// 📧 SMTP API Configuration (Mailjet via backend proxy)
+// ============================================================
+const SMTP_API_URL = "https://rhonelcustodio.github.io/CivicAdmin/";
+const SMTP_API_KEY = "0010d5e4c61fe3cacc160781c5f84e32";
+
+/**
+ * Broadcast an announcement email to ALL active residents via Mailjet.
+ * Collects emails from the allResidents array (already loaded via snapshot)
+ * and sends them to the backend SMTP server for delivery.
+ */
+async function broadcastAnnouncementEmail(title, priority, description, imageUrl) {
+  try {
+    // Filter only active residents who have a valid email
+    const activeResidents = allResidents.filter(r => {
+      if (residentIsDeleted(r)) return false;
+      if (residentIsDisabled(r)) return false;
+      const email = (r.email || "").trim();
+      return email && email.includes("@");
+    });
+
+    if (activeResidents.length === 0) {
+      console.warn("No active residents with emails found. Skipping email broadcast.");
+      return;
+    }
+
+    // Build the recipient list
+    const recipients = activeResidents.map(r => ({
+      email: r.email.trim(),
+      name: r.name || "Resident"
+    }));
+
+    // Priority styling
+    const priorityColors = {
+      Emergency: { bg: "#dc2626", text: "#ffffff", label: "🚨 EMERGENCY BROADCAST" },
+      Important: { bg: "#f59e0b", text: "#ffffff", label: "⚠️ IMPORTANT ALERT" },
+      Normal:    { bg: "#003B71", text: "#ffffff", label: "📢 PUBLIC NOTICE" }
+    };
+    const pStyle = priorityColors[priority] || priorityColors.Normal;
+
+    // Build a professional HTML email template
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 16px;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+  <!-- Header -->
+  <tr><td style="background-color:#003B71;padding:24px 32px;text-align:center;">
+    <h1 style="margin:0;color:#F2A900;font-size:20px;font-weight:800;letter-spacing:1px;">VICTORIA CIVIC PORTAL</h1>
+    <p style="margin:4px 0 0;color:#93c5fd;font-size:12px;letter-spacing:2px;">MUNICIPALITY OF VICTORIA</p>
+  </td></tr>
+  <!-- Priority Badge -->
+  <tr><td style="padding:0;">
+    <div style="background-color:${pStyle.bg};color:${pStyle.text};text-align:center;padding:10px 16px;font-size:13px;font-weight:700;letter-spacing:1px;">
+      ${pStyle.label}
+    </div>
+  </td></tr>
+  <!-- Content -->
+  <tr><td style="padding:32px;">
+    <h2 style="margin:0 0 16px;color:#003B71;font-size:22px;font-weight:800;">${title}</h2>
+    ${imageUrl ? `<img src="${imageUrl}" alt="Announcement" style="width:100%;max-height:300px;object-fit:cover;border-radius:12px;margin-bottom:20px;" />` : ""}
+    <p style="margin:0 0 24px;color:#334155;font-size:15px;line-height:1.7;white-space:pre-wrap;">${description}</p>
+    <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
+    <p style="margin:0;color:#94a3b8;font-size:12px;text-align:center;">
+      This is an official announcement from the Victoria Civic Portal.<br/>
+      Please do not reply to this email.
+    </p>
+  </td></tr>
+  <!-- Footer -->
+  <tr><td style="background-color:#f8fafc;padding:16px 32px;text-align:center;border-top:1px solid #e2e8f0;">
+    <p style="margin:0;color:#94a3b8;font-size:11px;">© ${new Date().getFullYear()} Municipality of Victoria · Official Communications</p>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+
+    const textContent = `${pStyle.label}\n\n${title}\n\n${description}\n\n---\nThis is an official announcement from the Victoria Civic Portal.\nPlease do not reply to this email.`;
+
+    // Send to the backend SMTP server
+    const response = await fetch(`${SMTP_API_URL}/v1/send-announcement`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SMTP_API_KEY}`
+      },
+      body: JSON.stringify({
+        subject: `[Victoria Civic Portal] ${priority === "Emergency" ? "🚨 " : priority === "Important" ? "⚠️ " : ""}${title}`,
+        html_content: htmlContent,
+        text_content: textContent,
+        recipients: recipients
+      })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      console.log(`📧 Announcement emailed: ${result.totalSent}/${result.totalRecipients} delivered.`);
+      window.showAdminAlert(
+        "Emails Sent",
+        `Announcement emailed to ${result.totalSent} of ${result.totalRecipients} residents.`,
+        true
+      );
+    } else {
+      console.error("Email broadcast failed:", result.error);
+      window.showAdminAlert("Email Warning", "Announcement posted but some emails may not have been sent: " + (result.error || "Unknown error"), false);
+    }
+  } catch (err) {
+    console.error("Email broadcast error:", err);
+    // Don't block the announcement — just warn the admin
+    window.showAdminAlert("Email Warning", "Announcement posted successfully, but email broadcast failed. Make sure the SMTP server is running.", false);
+  }
+}
+
 function newChipHtml() {
   return '<span class="item-new-chip">NEW</span>';
 }
@@ -2963,7 +3081,10 @@ async function handleAnnouncementSubmit(e) {
       document.getElementById("ann-image-file-label").textContent =
         "Original retained when possible · high-quality optimization · 8 MB max";
     }
-    window.showAdminAlert("Success", "Posted!", true);
+    window.showAdminAlert("Success", "Posted! Sending email to all residents...", true);
+
+    // 📧 Broadcast announcement email to all active residents
+    broadcastAnnouncementEmail(t.value.trim(), p.value, d.value.trim(), imageUrl);
   } catch (err) {
     window.showAdminAlert("Error", err.message, false);
   } finally {
