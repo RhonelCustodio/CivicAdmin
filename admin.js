@@ -30,6 +30,7 @@ const STATUS = {
   REGISTERED: "Registered",
   CANCELLED: "Cancelled",
   TRASHED: "Trashed",
+  REFUNDED: "Refunded",
 };
 
 /* ============================================================
@@ -77,6 +78,13 @@ function normalizeStatus(rawValue) {
     ].includes(s)
   )
     return STATUS.REJECTED;
+  if (
+    [
+      "refunded",
+      "refund",
+    ].includes(s)
+  )
+    return STATUS.REFUNDED;
   return STATUS.PENDING;
 }
 
@@ -239,6 +247,9 @@ function renderNewEventJoinsPanel() {
       const when = log.timestamp ? formatFirebaseTimestamp(log.timestamp) : "Just now";
       const name = log.residentName || "Resident";
       const eventTitle = log.eventTitle || "an event";
+      const escId = (log.id || "").replace(/'/g, "\\'");
+      const escName = name.replace(/'/g, "\\'");
+      const escEvent = eventTitle.replace(/'/g, "\\'");
       return (
         '<div class="flex items-center justify-between gap-3 bg-white border border-amber-200 rounded-xl px-3.5 py-2.5">' +
         '<div class="min-w-0"><p class="text-sm font-bold text-slate-900 truncate">' +
@@ -246,9 +257,10 @@ function renderNewEventJoinsPanel() {
         '</p><p class="text-xs text-slate-500 truncate">joined <span class="font-semibold text-victoria-blue">' +
         eventTitle +
         "</span></p></div>" +
-        '<div class="text-right shrink-0">' +
+        '<div class="text-right shrink-0 flex items-center gap-2">' +
         newChipHtml() +
-        '<p class="text-[10px] text-slate-400 mt-1">' +
+        '<button type="button" onclick="rejectParticipantRegistration(\'' + escId + '\', \'' + escName + '\', \'' + escEvent + '\')" class="text-xs px-2.5 py-1 rounded bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white font-semibold transition-all inline-flex items-center gap-1 shadow-sm"><i class="fa-solid fa-xmark"></i>Reject</button>' +
+        '<p class="text-[10px] text-slate-400">' +
         when +
         "</p></div></div>"
       );
@@ -416,9 +428,30 @@ window.showConfirmPopup = function (title, text, proceedCallback) {
   confirmModal.classList.remove("hidden");
   pendingConfirmCallback = proceedCallback;
 };
+window.openModal = function (id) {
+  const modal = document.getElementById(id);
+  if (modal) {
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+  }
+};
+window.closeModal = function (id) {
+  const modal = document.getElementById(id);
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+  }
+};
 window.toggleModal = function (id) {
   const modal = document.getElementById(id);
-  if (modal) modal.classList.toggle("hidden");
+  if (!modal) return;
+  if (modal.classList.contains("hidden")) {
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+  } else {
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+  }
 };
 async function createNotification(
   residentId,
@@ -454,78 +487,130 @@ window.sortActivityLogs = function (value) {
 };
 window.filterActivityLogs = function (filter) {
   const d = document.getElementById("activity-filter-select");
-  if (d) d.value = filter;
-  const fl = filter.toLowerCase();
+  if (filter && d && d.value !== filter) d.value = filter;
+  const selectedStatus = (d?.value || "all").toLowerCase();
+  const searchInput = document.getElementById("activity-search-input");
+  const query = (searchInput?.value || "").trim().toLowerCase();
+
+  let visible = 0;
   document.querySelectorAll(".activity-log-row").forEach((r) => {
-    const rs = r.getAttribute("data-status") || "";
-    const rsl = rs.toLowerCase();
-    if (fl === "all") r.style.display = "";
-    else if (fl === "credited")
-      r.style.display = rsl === STATUS.COMPLETED.toLowerCase() ? "" : "none";
-    else r.style.display = rsl === fl ? "" : "none";
+    const rs = (r.getAttribute("data-status") || "").toLowerCase();
+    const resident = (r.getAttribute("data-resident") || "").toLowerCase();
+    const event = (r.getAttribute("data-event") || "").toLowerCase();
+    const rowText = r.textContent.toLowerCase();
+
+    let matchesStatus = false;
+    if (selectedStatus === "all") matchesStatus = true;
+    else if (selectedStatus === "completed" || selectedStatus === "credited")
+      matchesStatus = rs === STATUS.COMPLETED.toLowerCase();
+    else matchesStatus = rs === selectedStatus;
+
+    const matchesQuery =
+      !query ||
+      resident.includes(query) ||
+      event.includes(query) ||
+      rowText.includes(query);
+
+    const show = matchesStatus && matchesQuery;
+    r.style.display = show ? "" : "none";
+    if (show) visible++;
   });
-};
-window.clearActivityLogs = function () {
-  const tbody = document.getElementById("activity-logs-tbody");
-  if (!tbody) return;
-  const rows = tbody.querySelectorAll("tr.activity-log-row");
-  const vr = Array.from(rows).filter((r) => r.style.display !== "none");
-  if (vr.length === 0) {
-    window.showAdminAlert("No Logs", "No visible logs to clear.", false);
-    return;
+
+  const rc = document.getElementById("activity-result-count");
+  if (rc) {
+    rc.textContent = `${visible} ${visible === 1 ? "log" : "logs"}`;
   }
+};
+
+// RECOMMENDATION: Activity audit logs shouldn't be bulk-deleted to avoid negligence & misuse.
+window.clearActivityLogs = function () {
+  window.showAdminAlert(
+    "Action Protected",
+    "Bulk deletion of activity logs is disabled to avoid negligence and maintain accountability. You can reject or delete specific participant records individually.",
+    false,
+  );
+};
+
+// Participant registration rejection & specific record actions
+window.rejectParticipantRegistration = function (id, residentName = "Resident", eventTitle = "the event") {
   window.showConfirmPopup(
-    "Clear Activity Logs",
-    `Move ${vr.length} log(s) to trash?`,
+    "Reject Participant Registration?",
+    `Are you sure you want to reject the registration of "${residentName}" for "${eventTitle}"?`,
     async () => {
       window.showLoading();
       try {
-        const b = writeBatch(db);
-        let c = 0;
-        const s = await getDocs(
-          query(
-            collection(db, "participants"),
-            where("status", "!=", STATUS.TRASHED),
-          ),
-        );
-        s.forEach((d) => {
-          const data = d.data();
-          const m = vr.some((r) => {
-            const cells = r.querySelectorAll("td");
-            return (
-              cells.length >= 2 &&
-              cells[0]?.textContent.trim() === (data.residentName || "") &&
-              cells[1]?.textContent.trim() === (data.eventTitle || "")
-            );
-          });
-          if (m) {
-            b.update(d.ref, {
-              status: STATUS.TRASHED,
-              trashedAt: serverTimestamp(),
-              trashedBy: getAdminDisplayName(),
-              trashedById: loggedInAdmin?.id || "system",
-              previousStatus: data.status,
-            });
-            c++;
-          }
+        const participantRef = doc(db, "participants", id);
+        const snap = await getDoc(participantRef);
+        if (!snap.exists()) {
+          window.hideLoading();
+          window.showAdminAlert("Error", "Participant record not found.", false);
+          return;
+        }
+        const data = snap.data();
+        await updateDoc(participantRef, {
+          status: STATUS.REJECTED,
+          rejectedAt: serverTimestamp(),
+          rejectedBy: getAdminDisplayName(),
+          rejectedById: loggedInAdmin?.id || "system",
         });
-        if (c > 0) {
-          await b.commit();
-          allActivityLogs = [];
-          window.showAdminAlert(
-            "Logs Moved to Trash",
-            `${c} log(s) moved.`,
-            true,
+        if (data.residentId) {
+          await createNotification(
+            data.residentId,
+            "Event Registration Rejected",
+            `Your registration for "${data.eventTitle || eventTitle}" has been rejected by administration.`,
+            "participant_rejected",
           );
-        } else window.showAdminAlert("No Changes", "No matching logs.", false);
+        }
+        window.showAdminAlert("Registration Rejected", `Successfully rejected registration for ${residentName}.`, true);
       } catch (err) {
-        window.showAdminAlert("Error", "Failed: " + err.message, false);
+        window.showAdminAlert("Error", err.message, false);
       } finally {
         window.hideLoading();
       }
     },
   );
 };
+
+window.resetParticipantRegistration = function (id, residentName = "Resident") {
+  window.showConfirmPopup(
+    "Reset Registration?",
+    `Reset registration status for "${residentName}" back to Registered?`,
+    async () => {
+      window.showLoading();
+      try {
+        await updateDoc(doc(db, "participants", id), {
+          status: STATUS.REGISTERED,
+          resetAt: serverTimestamp(),
+          resetBy: getAdminDisplayName(),
+        });
+        window.showAdminAlert("Success", "Registration status reset to Registered.", true);
+      } catch (err) {
+        window.showAdminAlert("Error", err.message, false);
+      } finally {
+        window.hideLoading();
+      }
+    },
+  );
+};
+
+window.deleteParticipantRecord = function (id, residentName = "Resident", eventTitle = "the event") {
+  window.showConfirmPopup(
+    "Delete Registration Record?",
+    `Are you sure you want to delete this specific registration record for "${residentName}" (${eventTitle})? This cannot be undone.`,
+    async () => {
+      window.showLoading();
+      try {
+        await deleteDoc(doc(db, "participants", id));
+        window.showAdminAlert("Record Deleted", "Specific registration record deleted successfully.", true);
+      } catch (err) {
+        window.showAdminAlert("Error", err.message, false);
+      } finally {
+        window.hideLoading();
+      }
+    },
+  );
+};
+
 window.viewTrashLogs = async function () {
   window.showLoading();
   try {
@@ -867,20 +952,35 @@ window.printServiceHours = window.printActivityLogs;
 // ========================================== DONATION FUNCTIONS ==========================================
 window.filterDonations = function (filter) {
   const d = document.getElementById("donation-filter-select");
-  if (d) d.value = filter;
-  const fl = filter.toLowerCase();
+  if (filter && d && d.value !== filter) d.value = filter;
+  const selectedStatus = (d?.value || "all").toLowerCase();
+  const searchInput = document.getElementById("donation-search-input");
+  const query = (searchInput?.value || "").trim().toLowerCase();
+
+  let visible = 0;
   document.querySelectorAll(".donation-row").forEach((r) => {
-    const rs = r.getAttribute("data-status") || "";
-    const rsl = rs.toLowerCase();
-    if (fl === "all") r.style.display = "";
-    else if (fl === "confirmed")
-      r.style.display =
-        rsl === STATUS.APPROVED.toLowerCase() ||
-          rsl === STATUS.CONFIRMED.toLowerCase()
-          ? ""
-          : "none";
-    else r.style.display = rsl === fl ? "" : "none";
+    const rs = (r.getAttribute("data-status") || "").toLowerCase();
+    const rowText = r.textContent.toLowerCase();
+
+    let matchesStatus = false;
+    if (selectedStatus === "all") matchesStatus = true;
+    else if (selectedStatus === "confirmed")
+      matchesStatus =
+        rs === STATUS.APPROVED.toLowerCase() ||
+        rs === STATUS.CONFIRMED.toLowerCase();
+    else matchesStatus = rs === selectedStatus;
+
+    const matchesQuery = !query || rowText.includes(query);
+
+    const show = matchesStatus && matchesQuery;
+    r.style.display = show ? "" : "none";
+    if (show) visible++;
   });
+
+  const rc = document.getElementById("donation-result-count");
+  if (rc) {
+    rc.textContent = `${visible} ${visible === 1 ? "record" : "records"}`;
+  }
 };
 window.sortDonations = function (value) {
   const [f, d] = value.split("-");
@@ -889,77 +989,142 @@ window.sortDonations = function (value) {
   const sd = document.getElementById("donation-sort-select");
   if (sd) sd.value = value;
   renderSortedDonations();
-  const fd = document.getElementById("donation-filter-select");
-  if (fd?.value !== "all") window.filterDonations(fd?.value || "all");
+  window.filterDonations();
 };
+
+// RECOMMENDATION: Donation data shouldn't be deleted to avoid negligence & misuse.
 window.clearDonations = function () {
-  const tbody = document.getElementById("admin-donations-tbody");
-  if (!tbody) return;
-  const rows = tbody.querySelectorAll("tr.donation-row");
-  const vr = Array.from(rows).filter((r) => r.style.display !== "none");
-  if (vr.length === 0) {
-    window.showAdminAlert("No Donations", "No visible donations.", false);
-    return;
-  }
+  window.showAdminAlert(
+    "Action Protected",
+    "Donation records are protected for municipal financial accountability and cannot be bulk deleted to avoid negligence and misuse.",
+    false,
+  );
+};
+
+window.deleteDonationRecord = function (id, donorName = "Donor") {
   window.showConfirmPopup(
-    "Clear Donations",
-    `Move ${vr.length} donation(s) to trash?`,
+    "Delete Donation Record?",
+    `Are you sure you want to delete the donation record for "${donorName}"? This will delete this specific donation entry.`,
     async () => {
       window.showLoading();
       try {
-        const b = writeBatch(db);
-        let c = 0;
-        const vd = [];
-        vr.forEach((row) => {
-          const cells = row.querySelectorAll("td");
-          if (cells.length >= 2)
-            vd.push({
-              donorName: cells[0]?.textContent.trim() || "",
-              resource: cells[1]?.textContent.trim() || "",
-            });
-        });
-        const s = await getDocs(
-          query(
-            collection(db, "donations"),
-            where("status", "!=", STATUS.TRASHED),
-          ),
-        );
-        s.forEach((d) => {
-          const data = d.data();
-          const fr = data.amount
-            ? `P${parseFloat(data.amount).toLocaleString()}`
-            : data.item || "N/A";
-          const fn = data.donorName || "Anonymous";
-          const m = vd.some((v) => v.donorName === fn && v.resource === fr);
-          if (m) {
-            b.update(d.ref, {
-              status: STATUS.TRASHED,
-              trashedAt: serverTimestamp(),
-              trashedBy: getAdminDisplayName(),
-              trashedById: loggedInAdmin?.id || "system",
-              previousStatus: data.status,
-            });
-            c++;
-          }
-        });
-        if (c > 0) {
-          await b.commit();
-          allDonations = [];
-          window.showAdminAlert(
-            "Donations Moved to Trash",
-            `${c} donation(s) moved.`,
-            true,
-          );
-        } else
-          window.showAdminAlert("No Changes", "No matching donations.", false);
+        await deleteDoc(doc(db, "donations", id));
+        if (typeof closeDonationScreenshotModal === "function") {
+          closeDonationScreenshotModal();
+        }
+        window.showAdminAlert("Donation Deleted", "Specific donation record removed.", true);
       } catch (err) {
-        window.showAdminAlert("Error", "Failed: " + err.message, false);
+        window.showAdminAlert("Error", err.message, false);
       } finally {
         window.hideLoading();
       }
     },
   );
 };
+
+function isEligibleRefundPaymentMethod(method) {
+  if (!method) return false;
+  const m = String(method).toLowerCase().replace(/[-_\s/]/g, "");
+  return (
+    m === "gcash" ||
+    m === "maya" ||
+    m === "paymaya" ||
+    m.includes("bank")
+  );
+}
+
+function getDonationDate(donation) {
+  if (!donation) return null;
+  const val = donation.createdAt || donation.timestamp || donation.date;
+  if (!val) return null;
+  if (val.toDate && typeof val.toDate === "function") return val.toDate();
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function calculateWorkingDays(startDate, endDate = new Date()) {
+  if (!startDate) return Infinity;
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return Infinity;
+  if (end < start) return 0;
+
+  let cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const target = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  let count = 0;
+
+  while (cur < target) {
+    cur.setDate(cur.getDate() + 1);
+    const day = cur.getDay(); // 0 = Sun, 6 = Sat
+    if (day !== 0 && day !== 6) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function isEligibleForRefund(donation) {
+  if (!donation) return false;
+  const eff = effectiveStatus(donation);
+  if (eff === STATUS.REFUNDED) return false;
+  if (eff === STATUS.REJECTED) return false;
+
+  const method = donation.paymentMethod || "";
+  if (!isEligibleRefundPaymentMethod(method)) return false;
+
+  const donationDate = getDonationDate(donation);
+  if (!donationDate) return false;
+
+  const workingDays = calculateWorkingDays(donationDate, new Date());
+  return workingDays <= 3;
+}
+
+window.refundDonationRecord = function (id, donorName = "Donor", amt = "", method = "") {
+  window.showConfirmPopup(
+    "Process Donation Refund?",
+    `Are you sure you want to process a refund for "${donorName}" (${amt ? amt + " " : ""}via ${method || "Electronic Payment"})? This payment occurred within 3 working days and will be marked as Refunded.`,
+    async () => {
+      window.showLoading();
+      try {
+        const donationRef = doc(db, "donations", id);
+        const snap = await getDoc(donationRef);
+        const d = snap.exists() ? snap.data() : null;
+
+        await updateDoc(donationRef, {
+          status: STATUS.REFUNDED,
+          paymentStatus: "Refunded",
+          refundedAt: serverTimestamp(),
+          refundedBy: getAdminDisplayName(),
+          refundedById: loggedInAdmin?.id || "system",
+        });
+
+        const recipientId = d?.donorId || d?.userId || d?.residentId;
+        if (recipientId) {
+          try {
+            await createNotification(
+              recipientId,
+              "Donation Refunded",
+              `Your donation of ${d?.amount ? "₱" + parseFloat(d.amount).toLocaleString() : "items"} via ${formatPaymentMethodName(d?.paymentMethod || method)} has been marked as Refunded by ${getAdminDisplayName()}.`,
+              "donation_refund"
+            );
+          } catch (notifErr) {
+            console.warn("Could not dispatch refund notification:", notifErr);
+          }
+        }
+
+        if (typeof closeDonationScreenshotModal === "function") {
+          closeDonationScreenshotModal();
+        }
+        window.showAdminAlert("Refund Processed", `Donation for "${donorName}" has been successfully marked as Refunded.`, true);
+      } catch (err) {
+        window.showAdminAlert("Error", err.message || "Failed to process refund.", false);
+      } finally {
+        window.hideLoading();
+      }
+    },
+  );
+};
+
 window.viewDonationTrash = async function () {
   window.showLoading();
   try {
@@ -1252,7 +1417,7 @@ function renderSortedDonations() {
   });
   if (sd.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="6" class="px-4 py-6 text-center text-stone-400">No donations reported yet.</td></tr>';
+      '<tr><td colspan="7" class="px-4 py-6 text-center text-stone-400">No donations reported yet.</td></tr>';
     return;
   }
   let html = "";
@@ -1269,6 +1434,9 @@ function renderSortedDonations() {
     else if (effStatus === STATUS.REJECTED)
       sb =
         '<span class="badge-danger px-2 py-0.5 rounded text-xs font-bold">Rejected</span>';
+    else if (effStatus === STATUS.REFUNDED)
+      sb =
+        '<span class="px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">Refunded</span>';
     else
       sb =
         '<span class="badge-warning px-2 py-0.5 rounded text-xs font-bold">Pending</span>';
@@ -1313,10 +1481,16 @@ function renderSortedDonations() {
       </span>`;
     }
     const isNew = effStatus === STATUS.PENDING;
-    const refLine = d.userReferenceNumber
-      ? `<p class="text-[10px] font-mono font-bold text-victoria-blue mt-0.5" title="Reference number submitted by the donor"><i class="fa-solid fa-hashtag mr-0.5"></i>Ref: ${d.userReferenceNumber}</p>`
-      : "";
-    html += `<tr class="${isNew ? "row-new " : ""}hover:bg-blue-50/60 cursor-pointer border-b table-row donation-row transition-colors" data-status="${effStatus}" onclick="openDonationScreenshotModal('${id}')"><td class="px-5 py-4 font-bold">${d.donorName || "Anonymous"}${isNew ? " " + newChipHtml() : ""}${refLine}</td><td class="px-5 py-4 font-bold text-emerald-800">${amt}</td><td class="px-5 py-4" onclick="event.stopPropagation(); openDonationScreenshotModal('${id}');">${proofCell}</td><td class="px-5 py-4 text-sm">${d.purpose || "N/A"}</td><td class="px-5 py-4 text-xs text-stone-500">${cd}</td><td class="px-5 py-4">${sb}</td></tr>`;
+    const escId = (id || "").replace(/'/g, "\\'");
+    const escDonor = (d.donorName || "Anonymous").replace(/'/g, "\\'");
+    const escAmt = (amt || "").replace(/'/g, "\\'");
+    const escMethod = (d.paymentMethod || "").replace(/'/g, "\\'");
+    const canRefund = isEligibleForRefund(d);
+    let refundBtn = "";
+    if (canRefund) {
+      refundBtn = `<button type="button" onclick="refundDonationRecord('${escId}', '${escDonor}', '${escAmt}', '${escMethod}')" class="px-2 py-1 rounded text-xs font-bold bg-amber-100 text-amber-900 hover:bg-amber-200 transition-all inline-flex items-center gap-1 shadow-xs mr-1.5" title="Refund within 3 working days"><i class="fa-solid fa-rotate-left text-[10px]"></i><span>Refund</span></button>`;
+    }
+    html += `<tr class="${isNew ? "row-new " : ""}hover:bg-blue-50/60 cursor-pointer border-b table-row donation-row transition-colors" data-status="${effStatus}" onclick="openDonationScreenshotModal('${id}')"><td class="px-5 py-4 font-bold">${d.donorName || "Anonymous"}${isNew ? " " + newChipHtml() : ""}</td><td class="px-5 py-4 font-bold text-emerald-800">${amt}</td><td class="px-5 py-4" onclick="event.stopPropagation(); openDonationScreenshotModal('${id}');">${proofCell}</td><td class="px-5 py-4 text-sm">${d.purpose || "N/A"}</td><td class="px-5 py-4 text-xs text-stone-500">${cd}</td><td class="px-5 py-4">${sb}</td><td class="px-4 py-4 text-right" onclick="event.stopPropagation()">${refundBtn}<button type="button" onclick="deleteDonationRecord('${escId}', '${escDonor}')" class="w-8 h-8 rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all inline-flex items-center justify-center" title="Delete specific donation record"><i class="fa-solid fa-trash-can text-xs"></i></button></td></tr>`;
   });
   tbody.innerHTML = html;
 }
@@ -1324,19 +1498,47 @@ function renderSortedDonations() {
 // ========================================== VOLUNTEER FUNCTIONS ==========================================
 window.filterVolunteers = function (filter) {
   const d = document.getElementById("volunteer-filter-select");
-  if (d) d.value = filter;
-  const fl = filter.toLowerCase();
+  if (filter && d && d.value !== filter) d.value = filter;
+  const selectedStatus = (d?.value || "all").toLowerCase();
+  const searchInput = document.getElementById("volunteer-search-input");
+  const query = (searchInput?.value || "").trim().toLowerCase();
+
   let visible = 0;
   document.querySelectorAll(".volunteer-row").forEach((r) => {
-    const rs = r.getAttribute("data-status") || "";
-    const rsl = rs.toLowerCase();
-    const show = fl === "all" || rsl === fl;
+    const rs = (r.getAttribute("data-status") || "").toLowerCase();
+    const rowText = r.textContent.toLowerCase();
+
+    const matchesStatus = selectedStatus === "all" || rs === selectedStatus;
+    const matchesQuery = !query || rowText.includes(query);
+
+    const show = matchesStatus && matchesQuery;
     r.style.display = show ? "" : "none";
     if (show) visible++;
   });
   const rc = document.getElementById("volunteer-result-count");
   if (rc)
     rc.textContent = `${visible} ${visible === 1 ? "record" : "records"}`;
+};
+
+window.deleteVolunteerRecord = function (id, name = "Volunteer") {
+  window.showConfirmPopup(
+    "Delete Volunteer Application?",
+    `Are you sure you want to delete the application record for "${name}"? This will delete this specific entry.`,
+    async () => {
+      window.showLoading();
+      try {
+        await deleteDoc(doc(db, "volunteers", id));
+        if (typeof window.closeVolunteerDetailsModal === "function") {
+          window.closeVolunteerDetailsModal();
+        }
+        window.showAdminAlert("Application Deleted", "Volunteer record removed.", true);
+      } catch (err) {
+        window.showAdminAlert("Error", err.message, false);
+      } finally {
+        window.hideLoading();
+      }
+    },
+  );
 };
 window.sortVolunteers = function (value) {
   const [f, d] = value.split("-");
@@ -1798,7 +2000,9 @@ function renderSortedVolunteers() {
     const isNew =
       (v.status || STATUS.PENDING) === STATUS.PENDING &&
       v.status !== STATUS.TRASHED;
-    html += `<tr class="${isNew ? "row-new " : ""}hover:bg-blue-50/60 cursor-pointer border-b table-row volunteer-row transition-colors" data-status="${v.status || "Pending"}" onclick="openVolunteerDetailsModal('${id}')"><td class="px-4 py-3"><div class="font-bold text-stone-900">${v.name || "N/A"}${isNew ? " " + newChipHtml() : ""}</div>${notesDisplay}</td><td class="px-4 py-3">${contactDisplay}</td><td class="px-4 py-3"><div class="text-sm font-semibold text-stone-800">${skillsDisplay}</div>${experienceDisplay}</td><td class="px-4 py-3 text-sm text-stone-600">${v.availability || "N/A"}</td><td class="px-4 py-3" onclick="event.stopPropagation()">${docDisplay}</td><td class="px-4 py-3">${sb}</td></tr>`;
+    const escVid = (v.id || "").replace(/'/g, "\\'");
+    const escVname = (v.name || "Volunteer").replace(/'/g, "\\'");
+    html += `<tr class="${isNew ? "row-new " : ""}hover:bg-blue-50/60 cursor-pointer border-b table-row volunteer-row transition-colors" data-status="${v.status || "Pending"}" onclick="openVolunteerDetailsModal('${id}')"><td class="px-4 py-3"><div class="font-bold text-stone-900">${v.name || "N/A"}${isNew ? " " + newChipHtml() : ""}</div>${notesDisplay}</td><td class="px-4 py-3">${contactDisplay}</td><td class="px-4 py-3"><div class="text-sm font-semibold text-stone-800">${skillsDisplay}</div>${experienceDisplay}</td><td class="px-4 py-3 text-sm text-stone-600">${v.availability || "N/A"}</td><td class="px-4 py-3" onclick="event.stopPropagation()">${docDisplay}</td><td class="px-4 py-3">${sb}</td><td class="px-4 py-3 text-right" onclick="event.stopPropagation()"><button type="button" onclick="deleteVolunteerRecord('${escVid}', '${escVname}')" class="w-8 h-8 rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all inline-flex items-center justify-center" title="Delete specific volunteer record"><i class="fa-solid fa-trash-can text-xs"></i></button></td></tr>`;
   });
   tbody.innerHTML = html;
 }
@@ -2437,6 +2641,7 @@ window.openVolunteerDetailsModal = async function (id) {
       if (status !== STATUS.PENDING) {
         btns += `<button type="button" onclick="updateVolunteerStatusFromModal('${id}', '${STATUS.PENDING}')" class="text-xs font-normal bg-amber-500 text-white px-3.5 py-2 rounded-md hover:bg-amber-600 shadow-sm flex items-center gap-1.5"><i class="fa-solid fa-rotate"></i>Reset</button>`;
       }
+      btns += `<button type="button" onclick="deleteVolunteerRecord('${id}', '${(v.name || 'Volunteer').replace(/'/g, "\\'")}')" class="text-xs font-semibold bg-slate-100 text-rose-600 border border-rose-200 px-3.5 py-2 rounded-md hover:bg-rose-50 shadow-sm flex items-center gap-1.5 ml-auto"><i class="fa-solid fa-trash-can"></i>Delete Record</button>`;
       actionsContainer.innerHTML = btns;
     }
 
@@ -2549,9 +2754,9 @@ function renderAdminPortalLoading() {
   renderAnnouncementsLoading();
   renderEventsLoading();
   renderTableLoading("contact-messages-tbody", 6, 5);
-  renderTableLoading("admin-volunteers-tbody", 6, 6);
+  renderTableLoading("admin-volunteers-tbody", 7, 6);
   renderTableLoading("admin-hours-tbody", 5, 4);
-  renderTableLoading("activity-logs-tbody", 5, 5);
+  renderTableLoading("activity-logs-tbody", 6, 5);
   renderTableLoading("admin-donations-tbody", 6, 6);
   renderTableLoading("residents-tbody", 4, 6);
 }
@@ -2868,7 +3073,10 @@ async function handleEditEventSubmit(e) {
     };
     if (tm) ud.time = tm;
     await updateDoc(doc(db, "events", id), ud);
-    window.toggleModal("edit-event-modal");
+    window.closeModal("edit-event-modal");
+    document.getElementById("edit-event-form")?.reset();
+    const editIdInput = document.getElementById("edit-event-id");
+    if (editIdInput) editIdInput.value = "";
     window.showAdminAlert("Success", "Updated!", true);
   } catch (err) {
     window.showAdminAlert("Error", err.message, false);
@@ -2895,7 +3103,7 @@ window.openEditEventModal = async function (id) {
       e.type || e.category || "";
     document.getElementById("edit-event-image").value = e.imageUrl || "";
     document.getElementById("edit-event-desc").value = e.desc || "";
-    window.toggleModal("edit-event-modal");
+    window.openModal("edit-event-modal");
   } catch (err) {
     window.showAdminAlert("Error", "Failed to load.", false);
   } finally {
@@ -4035,9 +4243,12 @@ function initContactMessagesListener() {
             ? (m.message || "").substring(0, 80) + "..."
             : m.message || "";
         const isNew = (m.status || "Pending") === "Pending";
-        h += `<tr class="${isNew ? "row-new " : ""}hover:bg-blue-50/60 border-b cursor-pointer transition-colors" onclick="viewContactMessage('${id}')"><td class="px-5 py-4"><div class="font-bold text-sm">${m.fullName || "Anonymous"}${isNew ? " " + newChipHtml() : ""}</div><div class="text-xs text-gray-500">${m.email || "N/A"}</div>${m.phone ? `<div class="text-xs text-gray-400"><i class="fa-solid fa-phone text-[10px] mr-1"></i>${m.phone}</div>` : ""}</td><td class="px-4 py-4"><div class="text-xs font-semibold mb-1.5">${m.serviceCategory || "General"}</div>${prb}</td><td class="px-4 py-4"><div class="text-sm font-semibold mb-1">${m.subject || "No Subject"}</div><div class="text-xs text-gray-500">${mp || "No content"}</div></td><td class="px-4 py-4"><div class="text-xs font-medium">${md}</div><div class="text-xs text-gray-400">${mt}</div></td><td class="px-4 py-4 text-center">${ai}</td><td class="px-2 py-4">${sb}</td></tr>`;
+        h += `<tr data-status="${m.status || 'Pending'}" class="${isNew ? "row-new " : ""}hover:bg-blue-50/60 border-b cursor-pointer transition-colors contact-message-row" onclick="viewContactMessage('${id}')"><td class="px-5 py-4"><div class="font-bold text-sm">${m.fullName || "Anonymous"}${isNew ? " " + newChipHtml() : ""}</div><div class="text-xs text-gray-500">${m.email || "N/A"}</div>${m.phone ? `<div class="text-xs text-gray-400"><i class="fa-solid fa-phone text-[10px] mr-1"></i>${m.phone}</div>` : ""}</td><td class="px-4 py-4"><div class="text-xs font-semibold mb-1.5">${m.serviceCategory || "General"}</div>${prb}</td><td class="px-4 py-4"><div class="text-sm font-semibold mb-1">${m.subject || "No Subject"}</div><div class="text-xs text-gray-500">${mp || "No content"}</div></td><td class="px-4 py-4"><div class="text-xs font-medium">${md}</div><div class="text-xs text-gray-400">${mt}</div></td><td class="px-4 py-4 text-center">${ai}</td><td class="px-2 py-4">${sb}</td></tr>`;
       });
       tbody.innerHTML = h;
+      if (typeof window.filterContactMessages === "function") {
+        window.filterContactMessages();
+      }
     },
     (err) => {
       console.error("Contact listener error:", err);
@@ -4228,9 +4439,12 @@ function initDigitalCheckInsListener() {
         const cd = formatFirebaseTimestamp(
           hr.certifiedAt || hr.rejectedAt || hr.restoredAt,
         );
-        h += `<tr class="hover:bg-blue-50/60 cursor-pointer border-b transition-colors" onclick="openServiceHourDetailsModal('${id}')"><td class="px-4 py-3 font-bold">${hr.residentName || "N/A"}</td><td class="px-4 py-3 font-medium">${hr.eventTitle || "N/A"}</td><td class="px-4 py-3 font-black text-center tabular-nums">${hr.hours || 0} hrs</td><td class="px-4 py-3">${sb}</td><td class="px-4 py-3 text-xs"><div>${hr.certifiedBy || hr.rejectedBy || hr.restoredBy || "System"}</div><div class="text-stone-400">${cd}</div></td></tr>`;
+        h += `<tr class="hover:bg-blue-50/60 cursor-pointer border-b transition-colors service-ledger-row" onclick="openServiceHourDetailsModal('${id}')"><td class="px-4 py-3 font-bold">${hr.residentName || "N/A"}</td><td class="px-4 py-3 font-medium">${hr.eventTitle || "N/A"}</td><td class="px-4 py-3 font-black text-center tabular-nums"><span class="inline-flex items-center gap-1.5 hover:text-victoria-blue" title="Click to view and edit hours">${hr.hours || 0} hrs <i class="fa-solid fa-pen-to-square text-[10px] text-slate-400"></i></span></td><td class="px-4 py-3">${sb}</td><td class="px-4 py-3 text-xs"><div>${hr.certifiedBy || hr.rejectedBy || hr.restoredBy || "System"}</div><div class="text-stone-400">${cd}</div></td></tr>`;
       });
       tbody.innerHTML = h;
+      if (typeof window.filterServiceHoursLedger === "function") {
+        window.filterServiceHoursLedger();
+      }
     },
   );
 }
@@ -4251,14 +4465,14 @@ function initActivityLogsListener() {
     (snap) => {
       if (snap.empty) {
         tbody.innerHTML =
-          '<tr><td colspan="5" class="px-4 py-6 text-center text-stone-400">No activity logs yet.</td></tr>';
+          '<tr><td colspan="6" class="px-4 py-6 text-center text-stone-400">No activity logs yet.</td></tr>';
         allActivityLogs = [];
         refreshActionBadges();
         return;
       }
       allActivityLogs = [];
       snap.forEach((d) => {
-        allActivityLogs.push(d.data());
+        allActivityLogs.push({ id: d.id, ...d.data() });
       });
       renderSortedActivityLogs();
       refreshActionBadges();
@@ -4271,6 +4485,12 @@ function renderSortedActivityLogs() {
   const tbody = document.getElementById("activity-logs-tbody");
   if (!tbody) return;
   const sl = [...allActivityLogs].sort((a, b) => {
+    // New / active event registrations are pushed to the top
+    const aIsNew = a.status === STATUS.REGISTERED;
+    const bIsNew = b.status === STATUS.REGISTERED;
+    if (aIsNew !== bIsNew) {
+      return aIsNew ? -1 : 1;
+    }
     if (activityLogSortField === "name") {
       const nA = (a.residentName || "").toLowerCase(),
         nB = (b.residentName || "").toLowerCase();
@@ -4289,7 +4509,7 @@ function renderSortedActivityLogs() {
   });
   if (sl.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="5" class="px-4 py-6 text-center text-stone-400">No activity logs yet.</td></tr>';
+      '<tr><td colspan="6" class="px-4 py-6 text-center text-stone-400">No activity logs yet.</td></tr>';
     return;
   }
   let h = "";
@@ -4337,9 +4557,25 @@ function renderSortedActivityLogs() {
       hour12: true,
     });
     const isNew = log.status === STATUS.REGISTERED;
-    h += `<tr class="border-b ${isNew ? "row-new " : ""}${rs} activity-log-row" data-status="${log.status || "unknown"}"><td class="px-4 py-3 font-bold">${log.residentName || "N/A"}${isNew ? " " + newChipHtml() : ""}</td><td class="px-4 py-3 font-medium">${log.eventTitle || "N/A"}</td><td class="px-4 py-3">${ab}</td><td class="px-4 py-3"><div class="text-xs">${fd}</div><div class="text-xs text-stone-500">${ft}</div></td><td class="px-4 py-3">${sb}</td></tr>`;
+    let actionsHtml = '<div class="flex items-center justify-end gap-1.5">';
+    const escId = (log.id || "").replace(/'/g, "\\'");
+    const escName = (log.residentName || "Resident").replace(/'/g, "\\'");
+    const escEvent = (log.eventTitle || "Event").replace(/'/g, "\\'");
+
+    if (log.status === STATUS.REGISTERED) {
+      actionsHtml += `<button type="button" onclick="event.stopPropagation(); rejectParticipantRegistration('${escId}', '${escName}', '${escEvent}')" class="px-2.5 py-1 text-xs font-semibold rounded bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white transition-all inline-flex items-center gap-1 shadow-sm" title="Reject participant registration"><i class="fa-solid fa-xmark"></i><span>Reject</span></button>`;
+    } else if (log.status === STATUS.REJECTED) {
+      actionsHtml += `<button type="button" onclick="event.stopPropagation(); resetParticipantRegistration('${escId}', '${escName}')" class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white transition-all inline-flex items-center gap-1 shadow-sm" title="Reset back to Registered"><i class="fa-solid fa-rotate-left"></i><span>Reset</span></button>`;
+    }
+
+    // Specific record delete button (satisfies: "There should be delete for a specific data rather than deleting all table data")
+    actionsHtml += `<button type="button" onclick="event.stopPropagation(); deleteParticipantRecord('${escId}', '${escName}', '${escEvent}')" class="w-7 h-7 rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all flex items-center justify-center shrink-0" title="Delete this specific registration record"><i class="fa-solid fa-trash-can text-xs"></i></button>`;
+    actionsHtml += "</div>";
+
+    h += `<tr class="border-b ${isNew ? "row-new " : ""}${rs} activity-log-row" data-status="${log.status || "unknown"}" data-resident="${(log.residentName || "").toLowerCase()}" data-event="${(log.eventTitle || "").toLowerCase()}"><td class="px-4 py-3 font-bold">${log.residentName || "N/A"}${isNew ? " " + newChipHtml() : ""}</td><td class="px-4 py-3 font-medium">${log.eventTitle || "N/A"}</td><td class="px-4 py-3">${ab}</td><td class="px-4 py-3"><div class="text-xs">${fd}</div><div class="text-xs text-stone-500">${ft}</div></td><td class="px-4 py-3">${sb}</td><td class="px-4 py-3 text-right">${actionsHtml}</td></tr>`;
   });
   tbody.innerHTML = h;
+  window.filterActivityLogs();
 }
 window.deleteEvent = function (id) {
   window.showConfirmPopup(
@@ -4851,13 +5087,6 @@ function openDonationScreenshotModal(donationId) {
   if (txEl)
     txEl.textContent =
       donation.transactionId || donation.txId || donation.id || "N/A";
-  // Donor-submitted reference number (required field from the Resident Hub
-  // payment form) — flagged red when missing.
-  const userRefEl = document.getElementById("proof-user-ref");
-  if (userRefEl) {
-    userRefEl.textContent = donation.userReferenceNumber || "Not provided";
-    userRefEl.classList.toggle("text-rose-500", !donation.userReferenceNumber);
-  }
 
   const screenshotUrl =
     typeof safeImageUrl === "function"
@@ -4894,12 +5123,16 @@ function openDonationScreenshotModal(donationId) {
   if (actionsLeft) {
     const status = effectiveStatus(donation);
     let btns = "";
-    if (![STATUS.APPROVED, STATUS.CONFIRMED].includes(status)) {
+    if (![STATUS.APPROVED, STATUS.CONFIRMED, STATUS.REFUNDED].includes(status)) {
       btns += `<button type="button" data-action="donation-status" data-id="${donation.id}" data-status="${STATUS.APPROVED}" onclick="updateDonationStatusFromProof('${donation.id}', '${STATUS.APPROVED}')" class="text-xs font-normal bg-emerald-600 text-white px-3.5 py-2 rounded-md hover:bg-emerald-700 shadow-sm flex items-center gap-1.5"><i class="fa-solid fa-check"></i>Confirm Payment</button>`;
     }
-    if (status !== STATUS.REJECTED) {
+    if (status !== STATUS.REJECTED && status !== STATUS.REFUNDED) {
       btns += `<button type="button" data-action="donation-status" data-id="${donation.id}" data-status="${STATUS.REJECTED}" onclick="updateDonationStatusFromProof('${donation.id}', '${STATUS.REJECTED}')" class="text-xs font-bold bg-rose-600 text-white px-3.5 py-2 rounded-xl hover:bg-rose-700 shadow-sm flex items-center gap-1.5"><i class="fa-solid fa-xmark"></i>Reject Payment</button>`;
     }
+    if (isEligibleForRefund(donation)) {
+      btns += `<button type="button" onclick="refundDonationRecord('${donation.id}', '${(donation.donorName || 'Donor').replace(/'/g, "\\'")}', '${donation.amount ? '₱' + parseFloat(donation.amount).toLocaleString() : ''}', '${(donation.paymentMethod || '').replace(/'/g, "\\'")}')" class="text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 px-3 py-2 rounded-xl shadow-sm flex items-center gap-1.5 ml-2"><i class="fa-solid fa-rotate-left"></i>Refund (3 Days)</button>`;
+    }
+    btns += `<button type="button" onclick="deleteDonationRecord('${donation.id}', '${(donation.donorName || 'Donor').replace(/'/g, "\\'")}')" class="text-xs font-semibold bg-slate-100 text-rose-600 hover:bg-rose-50 border border-rose-200 px-3 py-2 rounded-xl shadow-sm flex items-center gap-1.5 ml-2"><i class="fa-solid fa-trash-can"></i>Delete Record</button>`;
     actionsLeft.innerHTML = btns;
   }
 
@@ -4923,3 +5156,169 @@ function updateDonationStatusFromProof(donationId, newStatus) {
 window.openDonationScreenshotModal = openDonationScreenshotModal;
 window.closeDonationScreenshotModal = closeDonationScreenshotModal;
 window.updateDonationStatusFromProof = updateDonationStatusFromProof;
+// ========================================== CONTACT MESSAGES FILTER ==========================================
+window.filterContactMessages = function () {
+  const d = document.getElementById("contact-filter-select");
+  const filter = (d?.value || "all").toLowerCase();
+  const searchInput = document.getElementById("contact-search-input");
+  const query = (searchInput?.value || "").trim().toLowerCase();
+
+  let visible = 0;
+  document.querySelectorAll(".contact-message-row").forEach((r) => {
+    const rs = (r.getAttribute("data-status") || "").toLowerCase();
+    const rowText = r.textContent.toLowerCase();
+
+    const matchesStatus = filter === "all" || rs === filter;
+    const matchesQuery = !query || rowText.includes(query);
+
+    const show = matchesStatus && matchesQuery;
+    r.style.display = show ? "" : "none";
+    if (show) visible++;
+  });
+
+  const rc = document.getElementById("contact-result-count");
+  if (rc) {
+    rc.textContent = `${visible} ${visible === 1 ? "message" : "messages"}`;
+  }
+};
+
+// ========================================== SERVICE LEDGER FILTER & MODAL ==========================================
+window.filterServiceHoursLedger = function () {
+  const searchInput = document.getElementById("hours-ledger-search");
+  const query = (searchInput?.value || "").trim().toLowerCase();
+  document.querySelectorAll(".service-ledger-row").forEach((r) => {
+    const rowText = r.textContent.toLowerCase();
+    r.style.display = !query || rowText.includes(query) ? "" : "none";
+  });
+};
+
+let currentServiceHourId = null;
+
+window.openServiceHourDetailsModal = async function (id) {
+  window.showLoading();
+  try {
+    currentServiceHourId = id;
+    const s = await getDoc(doc(db, "service_hours", id));
+    if (!s.exists()) {
+      window.hideLoading();
+      window.showAdminAlert("Error", "Service hour entry not found.", false);
+      return;
+    }
+    const d = s.data();
+    const resEl = document.getElementById("hour-modal-resident");
+    const evEl = document.getElementById("hour-modal-event");
+    const hrEl = document.getElementById("hour-modal-hours");
+    const hrInput = document.getElementById("hour-modal-hours-input");
+    const stEl = document.getElementById("hour-modal-status-box");
+    const actEl = document.getElementById("hour-modal-actions");
+
+    if (resEl) resEl.textContent = d.residentName || "N/A";
+    if (evEl) evEl.textContent = d.eventTitle || "N/A";
+    if (hrEl) hrEl.textContent = `${d.hours || 0} hrs`;
+    if (hrInput) hrInput.value = d.hours !== undefined ? d.hours : 0;
+
+    if (stEl) {
+      let statusHtml = "";
+      if (d.status === STATUS.APPROVED) {
+        statusHtml = '<span class="badge-success px-2.5 py-1 rounded text-xs font-bold inline-block">Credited</span>';
+      } else if (d.status === STATUS.REJECTED) {
+        statusHtml = '<span class="badge-danger px-2.5 py-1 rounded text-xs font-bold inline-block">Rejected</span>';
+      } else {
+        statusHtml = '<span class="badge-warning px-2.5 py-1 rounded text-xs font-bold inline-block">Pending</span>';
+      }
+      stEl.innerHTML = statusHtml;
+    }
+
+    if (actEl) {
+      let actionsHtml = "";
+      if (d.status !== STATUS.REJECTED) {
+        actionsHtml += `<button type="button" onclick="closeServiceHourDetailsModal(); rejectServiceHours('${id}')" class="text-xs font-semibold bg-rose-600 text-white px-3.5 py-2 rounded-xl hover:bg-rose-700 shadow-sm flex items-center gap-1.5"><i class="fa-solid fa-xmark"></i>Reject Credit</button>`;
+      }
+      if (d.status === STATUS.REJECTED) {
+        actionsHtml += `<button type="button" onclick="closeServiceHourDetailsModal(); restoreServiceHours('${id}')" class="text-xs font-semibold bg-emerald-600 text-white px-3.5 py-2 rounded-xl hover:bg-emerald-700 shadow-sm flex items-center gap-1.5"><i class="fa-solid fa-rotate-left"></i>Restore Credit</button>`;
+      }
+      actEl.innerHTML = actionsHtml;
+    }
+    window.openModal("hour-details-modal");
+  } catch (err) {
+    window.showAdminAlert("Error", "Failed to load entry details.", false);
+  } finally {
+    window.hideLoading();
+  }
+};
+
+window.saveServiceHourEdit = async function () {
+  if (!currentServiceHourId) {
+    window.showAdminAlert("Error", "No service hour entry selected.", false);
+    return;
+  }
+  const hrInput = document.getElementById("hour-modal-hours-input");
+  const newHours = parseFloat(hrInput?.value);
+  if (isNaN(newHours) || newHours <= 0) {
+    window.showAdminAlert("Invalid Input", "Please enter a valid positive number of hours.", false);
+    return;
+  }
+  window.showLoading();
+  try {
+    const docRef = doc(db, "service_hours", currentServiceHourId);
+    const snap = await getDoc(docRef);
+    const d = snap.exists() ? snap.data() : null;
+
+    await updateDoc(docRef, {
+      hours: newHours,
+      updatedAt: serverTimestamp(),
+      updatedBy: getAdminDisplayName(),
+      updatedById: loggedInAdmin?.id || "system",
+    });
+
+    const recipientId = d?.residentId || d?.userId;
+    if (recipientId) {
+      try {
+        await createNotification(
+          recipientId,
+          "Service Hours Updated",
+          `Your accredited service hours for "${d?.eventTitle || "community activity"}" were updated to ${newHours} hrs by ${getAdminDisplayName()}.`,
+          "service_hours",
+        );
+      } catch (notifErr) {
+        console.warn("Could not dispatch hours update notification:", notifErr);
+      }
+    }
+
+    const hrEl = document.getElementById("hour-modal-hours");
+    if (hrEl) hrEl.textContent = `${newHours} hrs`;
+
+    window.showAdminAlert("Hours Saved", `Successfully updated service hours to ${newHours} hrs.`, true);
+  } catch (err) {
+    window.showAdminAlert("Error", err.message || "Failed to update service hours.", false);
+  } finally {
+    window.hideLoading();
+  }
+};
+
+window.closeServiceHourDetailsModal = function () {
+  window.closeModal("hour-details-modal");
+};
+
+// Global backdrop close handler for modals
+document.addEventListener("click", function (e) {
+  if (e.target && e.target.getAttribute && e.target.getAttribute("data-close-on-backdrop") === "true") {
+    if (e.target.id && typeof window.closeModal === "function") {
+      window.closeModal(e.target.id);
+    }
+  }
+});
+
+window.openModal = window.openModal;
+window.closeModal = window.closeModal;
+window.rejectParticipantRegistration = window.rejectParticipantRegistration;
+window.resetParticipantRegistration = window.resetParticipantRegistration;
+window.deleteParticipantRecord = window.deleteParticipantRecord;
+window.deleteVolunteerRecord = window.deleteVolunteerRecord;
+window.filterContactMessages = window.filterContactMessages;
+window.filterServiceHoursLedger = window.filterServiceHoursLedger;
+window.openServiceHourDetailsModal = window.openServiceHourDetailsModal;
+window.closeServiceHourDetailsModal = window.closeServiceHourDetailsModal;
+window.saveServiceHourEdit = window.saveServiceHourEdit;
+window.refundDonationRecord = window.refundDonationRecord;
+window.deleteDonationRecord = window.deleteDonationRecord;
