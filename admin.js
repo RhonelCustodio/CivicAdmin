@@ -652,7 +652,7 @@ window.viewTrashLogs = async function () {
     });
     let tr = "";
     if (tl.length === 0) {
-      tr = `<tr><td colspan="6" class="px-4 py-10 text-center text-gray-400"><i class="fa-solid fa-trash-can text-4xl mb-3 block text-gray-300"></i><p class="text-lg font-bold text-gray-500">Trash is Empty</p></td></tr>`;
+      tr = `<tr><td colspan="5" class="px-4 py-10 text-center text-gray-400"><i class="fa-solid fa-trash-can text-4xl mb-3 block text-gray-300"></i><p class="text-lg font-bold text-gray-500">Trash is Empty</p></td></tr>`;
     } else {
       tl.forEach((log) => {
         const id = log.id;
@@ -688,10 +688,10 @@ window.viewTrashLogs = async function () {
         const td = log.trashedAt
           ? formatFirebaseTimestamp(log.trashedAt)
           : "N/A";
-        tr += `<tr class="border-b bg-red-50/30 hover:bg-red-100/50"><td class="px-4 py-3"><div class="font-bold">${log.residentName || "N/A"}</div><div class="text-[10px] text-red-500"><i class="fa-solid fa-trash-can mr-1"></i>Deleted: ${td}</div><div class="text-[10px] text-stone-400">By: ${log.trashedBy || "Admin"}</div></td><td class="px-4 py-3 font-medium">${log.eventTitle || "N/A"}</td><td class="px-4 py-3">${ab}</td><td class="px-4 py-3"><div class="text-xs">${fd}</div><div class="text-xs text-stone-400">${ft}</div></td><td class="px-4 py-3"><span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-bold"><i class="fa-solid fa-trash-can text-[10px]"></i> Trashed</span></td><td class="px-4 py-3"><div class="flex gap-1.5"><button onclick="event.stopPropagation();restoreActivityLog('${id}')" class="text-xs px-3 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-medium"><i class="fa-solid fa-rotate-left"></i> Restore</button><button onclick="event.stopPropagation();permanentlyDeleteActivityLog('${id}')" class="text-xs px-3 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-medium"><i class="fa-solid fa-trash"></i> Delete</button></div></td></tr>`;
+        tr += `<tr class="border-b bg-red-50/30 hover:bg-red-100/50"><td class="px-4 py-3"><div class="font-bold">${log.residentName || "N/A"}</div><div class="text-[10px] text-red-500"><i class="fa-solid fa-trash-can mr-1"></i>Deleted: ${td}</div><div class="text-[10px] text-stone-400">By: ${log.trashedBy || "Admin"}</div></td><td class="px-4 py-3 font-medium">${log.eventTitle || "N/A"}</td><td class="px-4 py-3"><div class="text-xs">${fd}</div><div class="text-xs text-stone-400">${ft}</div></td><td class="px-4 py-3"><span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-bold"><i class="fa-solid fa-trash-can text-[10px]"></i> Trashed</span></td><td class="px-4 py-3"><div class="flex gap-1.5"><button onclick="event.stopPropagation();restoreActivityLog('${id}')" class="text-xs px-3 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-medium"><i class="fa-solid fa-rotate-left"></i> Restore</button><button onclick="event.stopPropagation();permanentlyDeleteActivityLog('${id}')" class="text-xs px-3 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-medium"><i class="fa-solid fa-trash"></i> Delete</button></div></td></tr>`;
       });
     }
-    modal.innerHTML = `<div class="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl border border-gray-200 modal-enter flex flex-col" style="margin:auto"><div class="p-6 border-b flex items-center justify-between shrink-0 bg-white rounded-t-2xl"><div><h2 class="text-xl font-extrabold text-red-700"><i class="fa-solid fa-trash-can"></i> Trash - Deleted Activity Logs</h2><p class="text-sm text-stone-500">${tl.length || 0} log(s) in trash</p></div><div class="flex items-center gap-3">${tl.length > 0 ? `<button onclick="emptyAllTrash()" class="text-xs px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-semibold"><i class="fa-solid fa-trash-can"></i> Empty Trash</button><button onclick="restoreAllTrash()" class="text-xs px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-semibold"><i class="fa-solid fa-rotate-left"></i> Restore All</button>` : ""}<button onclick="document.getElementById('trash-logs-modal').remove()" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button></div></div><div class="overflow-y-auto flex-1" style="min-height:0"><table class="w-full text-sm"><thead class="sticky top-0 z-10"><tr class="bg-red-50 text-xs font-semibold text-red-700 uppercase"><th class="px-4 py-3 text-left bg-red-50">Resident Name</th><th class="px-4 py-3 text-left bg-red-50">Event</th><th class="px-4 py-3 text-left bg-red-50">Activity</th><th class="px-4 py-3 text-left bg-red-50">Date & Time</th><th class="px-4 py-3 text-left bg-red-50">Status</th><th class="px-4 py-3 text-left bg-red-50">Actions</th></tr></thead><tbody class="divide-y divide-gray-100">${tr}</tbody></table></div><div class="p-4 border-t bg-gray-50 shrink-0 rounded-b-2xl"><p class="text-xs text-stone-400 text-center"><i class="fa-solid fa-info-circle mr-1"></i>Trashed logs can be restored.</p></div></div>`;
+    modal.innerHTML = `<div class="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl border border-gray-200 modal-enter flex flex-col" style="margin:auto"><div class="p-6 border-b flex items-center justify-between shrink-0 bg-white rounded-t-2xl"><div><h2 class="text-xl font-extrabold text-red-700"><i class="fa-solid fa-trash-can"></i> Trash - Deleted Activity Logs</h2><p class="text-sm text-stone-500">${tl.length || 0} log(s) in trash</p></div><div class="flex items-center gap-3">${tl.length > 0 ? `<button onclick="emptyAllTrash()" class="text-xs px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-semibold"><i class="fa-solid fa-trash-can"></i> Empty Trash</button><button onclick="restoreAllTrash()" class="text-xs px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-semibold"><i class="fa-solid fa-rotate-left"></i> Restore All</button>` : ""}<button onclick="document.getElementById('trash-logs-modal').remove()" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button></div></div><div class="overflow-y-auto flex-1" style="min-height:0"><table class="w-full text-sm"><thead class="sticky top-0 z-10"><tr class="bg-red-50 text-xs font-semibold text-red-700 uppercase"><th class="px-4 py-3 text-left bg-red-50">Resident Name</th><th class="px-4 py-3 text-left bg-red-50">Event</th><th class="px-4 py-3 text-left bg-red-50">Date & Time</th><th class="px-4 py-3 text-left bg-red-50">Status</th><th class="px-4 py-3 text-left bg-red-50">Actions</th></tr></thead><tbody class="divide-y divide-gray-100">${tr}</tbody></table></div><div class="p-4 border-t bg-gray-50 shrink-0 rounded-b-2xl"><p class="text-xs text-stone-400 text-center"><i class="fa-solid fa-info-circle mr-1"></i>Trashed logs can be restored.</p></div></div>`;
     document.body.appendChild(modal);
     window.hideLoading();
   } catch (err) {
@@ -906,20 +906,22 @@ window.printActivityLogs = function () {
   } else {
     bodyRows = rows.map((r) => {
       const c = r.querySelectorAll("td");
-      if (c.length >= 5) {
+      if (c.length >= 4) {
         const residentName = (c[0]?.textContent || "").replace(/\s*NEW\s*$/, "").trim() || "";
         const eventTitle = c[1]?.textContent.trim() || "";
-        const actionText = c[2]?.textContent.trim() || "";
-        const dateTime = (c[3]?.textContent || "").replace(/\s+/g, " ").trim() || "";
-        const status = c[4]?.textContent.trim() || "";
+        const dateTime = (c[2]?.textContent || "").replace(/\s+/g, " ").trim() || "";
+        const status = c[3]?.textContent.trim() || "";
         const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        // For Activity Logs fallback, Credited Hours column shows Action (e.g. Registered / Credited)
-        return `<tr><td>${esc(residentName)}</td><td>${esc(eventTitle)}</td><td style="font-weight:700;text-align:center">${esc(actionText || "—")}</td><td>${esc(dateTime)}</td><td>${esc(status)}</td></tr>`;
+        return `<tr><td>${esc(residentName)}</td><td>${esc(eventTitle)}</td><td>${esc(dateTime)}</td><td>${esc(status)}</td></tr>`;
       }
       return "";
     }).join("");
   }
   const title = source === "hours" ? "Service Hours Report" : "Activity Logs Report";
+  const tableHead =
+    source === "hours"
+      ? "<thead><tr><th>Resident Name</th><th>Event</th><th style=\"text-align:center\">Credited Hours</th><th>Date &amp; Time</th><th>Status</th></tr></thead>"
+      : "<thead><tr><th>Resident Name</th><th>Event</th><th>Date &amp; Time</th><th>Status</th></tr></thead>";
   pw.document.write(
     `<!DOCTYPE html><html><head><title>${title}</title><style>
       body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#1e293b}
@@ -942,7 +944,7 @@ window.printActivityLogs = function () {
         <span class="badge">${rows.length} record(s)</span>
       </div>
       <table>
-        <thead><tr><th>Resident Name</th><th>Event</th><th style="text-align:center">Credited Hours</th><th>Date &amp; Time</th><th>Status</th></tr></thead>
+        ${tableHead}
         <tbody>${bodyRows}</tbody>
       </table>
       <div class="footer">
@@ -2765,7 +2767,7 @@ function renderAdminPortalLoading() {
   renderTableLoading("contact-messages-tbody", 6, 5);
   renderTableLoading("admin-volunteers-tbody", 7, 6);
   renderTableLoading("admin-hours-tbody", 5, 4);
-  renderTableLoading("activity-logs-tbody", 6, 5);
+  renderTableLoading("activity-logs-tbody", 5, 5);
   renderTableLoading("admin-donations-tbody", 6, 6);
   renderTableLoading("residents-tbody", 4, 6);
 }
@@ -4516,7 +4518,7 @@ function initActivityLogsListener() {
     (snap) => {
       if (snap.empty) {
         tbody.innerHTML =
-          '<tr><td colspan="6" class="px-4 py-6 text-center text-stone-400">No activity logs yet.</td></tr>';
+          '<tr><td colspan="5" class="px-4 py-6 text-center text-stone-400">No activity logs yet.</td></tr>';
         allActivityLogs = [];
         refreshActionBadges();
         return;
@@ -4560,37 +4562,26 @@ function renderSortedActivityLogs() {
   });
   if (sl.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="6" class="px-4 py-6 text-center text-stone-400">No activity logs yet.</td></tr>';
+      '<tr><td colspan="5" class="px-4 py-6 text-center text-stone-400">No activity logs yet.</td></tr>';
     return;
   }
   let h = "";
   sl.forEach((log) => {
-    let ab = "",
-      sb = "",
+    let sb = "",
       rs = "";
     if (log.status === STATUS.REGISTERED) {
-      ab =
-        '<span class="px-2 py-0.5 rounded text-xs font-bold text-slate-700">Registered</span>';
       sb = '<span class="text-blue-600 text-xs font-bold">Active</span>';
       rs = "hover:bg-blue-50/50";
     } else if (log.status === STATUS.CANCELLED) {
-      ab =
-        '<span class="px-2 py-0.5 rounded text-xs font-bold text-slate-700">Cancelled</span>';
       sb = '<span class="text-red-600 text-xs font-bold">Cancelled</span>';
       rs = "hover:bg-red-50/50";
     } else if (log.status === STATUS.COMPLETED) {
-      ab =
-        '<span class="px-2 py-0.5 rounded text-xs font-bold text-slate-700">Credited</span>';
       sb = '<span class="text-emerald-600 text-xs font-bold">Credited</span>';
       rs = "hover:bg-emerald-50/50";
     } else if (log.status === STATUS.REJECTED) {
-      ab =
-        '<span class="px-2 py-0.5 rounded text-xs font-bold text-slate-700">Rejected</span>';
       sb = '<span class="text-red-600 text-xs font-bold">Rejected</span>';
       rs = "hover:bg-red-50/50";
     } else {
-      ab =
-        '<span class="px-2 py-0.5 rounded text-xs font-bold text-slate-700">Unknown</span>';
       sb = '<span class="text-amber-600 text-xs font-bold">Unknown</span>';
       rs = "hover:bg-stone-50";
     }
@@ -4623,7 +4614,7 @@ function renderSortedActivityLogs() {
     actionsHtml += `<button type="button" onclick="event.stopPropagation(); deleteParticipantRecord('${escId}', '${escName}', '${escEvent}')" class="w-7 h-7 rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all flex items-center justify-center shrink-0" title="Delete this specific registration record"><i class="fa-solid fa-trash-can text-xs"></i></button>`;
     actionsHtml += "</div>";
 
-    h += `<tr class="border-b ${isNew ? "row-new " : ""}${rs} activity-log-row" data-status="${log.status || "unknown"}" data-resident="${(log.residentName || "").toLowerCase()}" data-event="${(log.eventTitle || "").toLowerCase()}"><td class="px-4 py-3 font-bold">${log.residentName || "N/A"}${isNew ? " " + newChipHtml() : ""}</td><td class="px-4 py-3 font-medium">${log.eventTitle || "N/A"}</td><td class="px-4 py-3">${ab}</td><td class="px-4 py-3"><div class="text-xs">${fd}</div><div class="text-xs text-stone-500">${ft}</div></td><td class="px-4 py-3">${sb}</td><td class="px-4 py-3 text-right">${actionsHtml}</td></tr>`;
+    h += `<tr class="border-b ${isNew ? "row-new " : ""}${rs} activity-log-row" data-status="${log.status || "unknown"}" data-resident="${(log.residentName || "").toLowerCase()}" data-event="${(log.eventTitle || "").toLowerCase()}"><td class="px-4 py-3 font-bold">${log.residentName || "N/A"}${isNew ? " " + newChipHtml() : ""}</td><td class="px-4 py-3 font-medium">${log.eventTitle || "N/A"}</td><td class="px-4 py-3"><div class="text-xs">${fd}</div><div class="text-xs text-stone-500">${ft}</div></td><td class="px-4 py-3">${sb}</td><td class="px-4 py-3 text-right">${actionsHtml}</td></tr>`;
   });
   tbody.innerHTML = h;
   window.filterActivityLogs();
