@@ -412,7 +412,7 @@ window.showAdminAlert = function (title, message, isSuccess = true) {
   }
   alertTitle.innerText = title;
   alertMsg.innerText = message;
-  alertModal.classList.remove("hidden");
+  window.openModal(alertModal);
 };
 window.showConfirmPopup = function (title, text, proceedCallback) {
   const confirmTitle = document.getElementById("confirm-title"),
@@ -425,46 +425,40 @@ window.showConfirmPopup = function (title, text, proceedCallback) {
   }
   confirmTitle.innerText = title;
   confirmMsg.innerText = text;
-  confirmModal.classList.remove("hidden");
+  window.openModal(confirmModal);
   pendingConfirmCallback = proceedCallback;
 };
 window.openModal = function (id) {
-  const modal = document.getElementById(id);
+  const modal = typeof id === "string" ? document.getElementById(id) : id;
   if (modal) {
-    // Clear any inline display override set by closeModal before toggling classes.
-    modal.style.removeProperty("display");
+    modal.style.display = "flex";
     modal.classList.remove("hidden");
     modal.classList.add("flex");
   }
 };
 window.closeModal = function (id) {
-  const modal = document.getElementById(id);
+  const modal = typeof id === "string" ? document.getElementById(id) : id;
   if (modal) {
+    modal.style.display = "none";
     modal.classList.add("hidden");
     modal.classList.remove("flex");
-    // Belt-and-suspenders: force display:none so no inline style or
-    // animation can keep the modal visible while the success alert shows.
-    modal.style.display = "none";
   }
 };
 window._reopenModal = function (id) {
-  // Companion to closeModal — call this to restore normal modal display
-  // (removes the inline style set by closeModal so Tailwind classes take over).
-  const modal = document.getElementById(id);
-  if (modal) modal.style.removeProperty("display");
-};
-window.toggleModal = function (id) {
-  const modal = document.getElementById(id);
-  if (!modal) return;
-  if (modal.classList.contains("hidden")) {
-    // Clear any forced inline display before opening so Tailwind flex takes over.
-    modal.style.removeProperty("display");
+  const modal = typeof id === "string" ? document.getElementById(id) : id;
+  if (modal) {
+    modal.style.display = "flex";
     modal.classList.remove("hidden");
     modal.classList.add("flex");
+  }
+};
+window.toggleModal = function (id) {
+  const modal = typeof id === "string" ? document.getElementById(id) : id;
+  if (!modal) return;
+  if (modal.classList.contains("hidden") || modal.style.display === "none") {
+    window.openModal(modal);
   } else {
-    modal.classList.add("hidden");
-    modal.classList.remove("flex");
-    modal.style.display = "none";
+    window.closeModal(modal);
   }
 };
 async function createNotification(
@@ -697,7 +691,7 @@ window.viewTrashLogs = async function () {
         tr += `<tr class="border-b bg-red-50/30 hover:bg-red-100/50"><td class="px-4 py-3"><div class="font-bold">${log.residentName || "N/A"}</div><div class="text-[10px] text-red-500"><i class="fa-solid fa-trash-can mr-1"></i>Deleted: ${td}</div><div class="text-[10px] text-stone-400">By: ${log.trashedBy || "Admin"}</div></td><td class="px-4 py-3 font-medium">${log.eventTitle || "N/A"}</td><td class="px-4 py-3">${ab}</td><td class="px-4 py-3"><div class="text-xs">${fd}</div><div class="text-xs text-stone-400">${ft}</div></td><td class="px-4 py-3"><span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-bold"><i class="fa-solid fa-trash-can text-[10px]"></i> Trashed</span></td><td class="px-4 py-3"><div class="flex gap-1.5"><button onclick="event.stopPropagation();restoreActivityLog('${id}')" class="text-xs px-3 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-medium"><i class="fa-solid fa-rotate-left"></i> Restore</button><button onclick="event.stopPropagation();permanentlyDeleteActivityLog('${id}')" class="text-xs px-3 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-medium"><i class="fa-solid fa-trash"></i> Delete</button></div></td></tr>`;
       });
     }
-    modal.innerHTML = `<div class="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl border border-gray-200 modal-enter flex flex-col" style="margin:auto"><div class="p-6 border-b flex items-center justify-between shrink-0 bg-white rounded-t-2xl"><div><h2 class="text-xl font-extrabold text-red-700"><i class="fa-solid fa-trash-can"></i> Trash - Deleted Activity Logs</h2><p class="text-sm text-stone-500">${tl.length || 0} log(s) in trash</p></div><div class="flex items-center gap-3">${tl.length > 0 ? `<button onclick="emptyAllTrash()" class="text-xs px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-semibold"><i class="fa-solid fa-trash-can"></i> Empty Trash</button><button onclick="restoreAllTrash()" class="text-xs px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-semibold"><i class="fa-solid fa-rotate-left"></i> Restore All</button>` : ""}<button onclick="document.getElementById('trash-logs-modal').remove()" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button></div></div><div class="overflow-y-auto flex-1" style="min-height:0"><table class="w-full text-sm"><thead class="sticky top-0 z-10"><tr class="bg-red-50 text-xs font-semibold text-red-700 uppercase"><th class="px-4 py-3 text-left bg-red-50">Resident Name</th><th class="px-4 py-3 text-left bg-red-50">Event</th><th class="px-4 py-3 text-left bg-red-50">Action</th><th class="px-4 py-3 text-left bg-red-50">Date & Time</th><th class="px-4 py-3 text-left bg-red-50">Status</th><th class="px-4 py-3 text-left bg-red-50">Actions</th></tr></thead><tbody class="divide-y divide-gray-100">${tr}</tbody></table></div><div class="p-4 border-t bg-gray-50 shrink-0 rounded-b-2xl"><p class="text-xs text-stone-400 text-center"><i class="fa-solid fa-info-circle mr-1"></i>Trashed logs can be restored.</p></div></div>`;
+    modal.innerHTML = `<div class="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl border border-gray-200 modal-enter flex flex-col" style="margin:auto"><div class="p-6 border-b flex items-center justify-between shrink-0 bg-white rounded-t-2xl"><div><h2 class="text-xl font-extrabold text-red-700"><i class="fa-solid fa-trash-can"></i> Trash - Deleted Activity Logs</h2><p class="text-sm text-stone-500">${tl.length || 0} log(s) in trash</p></div><div class="flex items-center gap-3">${tl.length > 0 ? `<button onclick="emptyAllTrash()" class="text-xs px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-semibold"><i class="fa-solid fa-trash-can"></i> Empty Trash</button><button onclick="restoreAllTrash()" class="text-xs px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-semibold"><i class="fa-solid fa-rotate-left"></i> Restore All</button>` : ""}<button onclick="document.getElementById('trash-logs-modal').remove()" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button></div></div><div class="overflow-y-auto flex-1" style="min-height:0"><table class="w-full text-sm"><thead class="sticky top-0 z-10"><tr class="bg-red-50 text-xs font-semibold text-red-700 uppercase"><th class="px-4 py-3 text-left bg-red-50">Resident Name</th><th class="px-4 py-3 text-left bg-red-50">Event</th><th class="px-4 py-3 text-left bg-red-50">Activity</th><th class="px-4 py-3 text-left bg-red-50">Date & Time</th><th class="px-4 py-3 text-left bg-red-50">Status</th><th class="px-4 py-3 text-left bg-red-50">Actions</th></tr></thead><tbody class="divide-y divide-gray-100">${tr}</tbody></table></div><div class="p-4 border-t bg-gray-50 shrink-0 rounded-b-2xl"><p class="text-xs text-stone-400 text-center"><i class="fa-solid fa-info-circle mr-1"></i>Trashed logs can be restored.</p></div></div>`;
     document.body.appendChild(modal);
     window.hideLoading();
   } catch (err) {
@@ -1393,8 +1387,10 @@ function initDonationsListener() {
     (snapshot) => {
       if (snapshot.empty) {
         tbody.innerHTML =
-          '<tr><td colspan="6" class="px-4 py-6 text-center text-stone-400">No donations reported yet.</td></tr>';
+          '<tr><td colspan="7" class="px-4 py-6 text-center text-stone-400">No donations reported yet.</td></tr>';
         allDonations = [];
+        const rc0 = document.getElementById("donation-result-count");
+        if (rc0) rc0.textContent = "0 records";
         refreshActionBadges();
         return;
       }
@@ -1405,7 +1401,7 @@ function initDonationsListener() {
       renderSortedDonations();
       refreshActionBadges();
       const cf = dropdown?.value || "all";
-      if (cf !== "all") window.filterDonations(cf);
+      window.filterDonations(cf);
     },
   );
 }
@@ -1432,6 +1428,8 @@ function renderSortedDonations() {
   if (sd.length === 0) {
     tbody.innerHTML =
       '<tr><td colspan="7" class="px-4 py-6 text-center text-stone-400">No donations reported yet.</td></tr>';
+    const rc0 = document.getElementById("donation-result-count");
+    if (rc0) rc0.textContent = "0 records";
     return;
   }
   let html = "";
@@ -1507,6 +1505,7 @@ function renderSortedDonations() {
     html += `<tr class="${isNew ? "row-new " : ""}hover:bg-blue-50/60 cursor-pointer border-b table-row donation-row transition-colors" data-status="${effStatus}" onclick="openDonationScreenshotModal('${id}')"><td class="px-5 py-4 font-bold">${d.donorName || "Anonymous"}${isNew ? " " + newChipHtml() : ""}</td><td class="px-5 py-4 font-bold text-emerald-800">${amt}</td><td class="px-5 py-4" onclick="event.stopPropagation(); openDonationScreenshotModal('${id}');">${proofCell}</td><td class="px-5 py-4 text-sm">${d.purpose || "N/A"}</td><td class="px-5 py-4 text-xs text-stone-500">${cd}</td><td class="px-5 py-4">${sb}</td><td class="px-4 py-4 text-right" onclick="event.stopPropagation()">${refundBtn}<button type="button" onclick="deleteDonationRecord('${escId}', '${escDonor}')" class="w-8 h-8 rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all inline-flex items-center justify-center" title="Delete specific donation record"><i class="fa-solid fa-trash-can text-xs"></i></button></td></tr>`;
   });
   tbody.innerHTML = html;
+  window.filterDonations();
 }
 
 // ========================================== VOLUNTEER FUNCTIONS ==========================================
@@ -2019,6 +2018,7 @@ function renderSortedVolunteers() {
     html += `<tr class="${isNew ? "row-new " : ""}hover:bg-blue-50/60 cursor-pointer border-b table-row volunteer-row transition-colors" data-status="${v.status || "Pending"}" onclick="openVolunteerDetailsModal('${id}')"><td class="px-4 py-3"><div class="font-bold text-stone-900">${v.name || "N/A"}${isNew ? " " + newChipHtml() : ""}</div>${notesDisplay}</td><td class="px-4 py-3">${contactDisplay}</td><td class="px-4 py-3"><div class="text-sm font-semibold text-stone-800">${skillsDisplay}</div>${experienceDisplay}</td><td class="px-4 py-3 text-sm text-stone-600">${v.availability || "N/A"}</td><td class="px-4 py-3" onclick="event.stopPropagation()">${docDisplay}</td><td class="px-4 py-3">${sb}</td><td class="px-4 py-3 text-right" onclick="event.stopPropagation()"><button type="button" onclick="deleteVolunteerRecord('${escVid}', '${escVname}')" class="w-8 h-8 rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all inline-flex items-center justify-center" title="Delete specific volunteer record"><i class="fa-solid fa-trash-can text-xs"></i></button></td></tr>`;
   });
   tbody.innerHTML = html;
+  window.filterVolunteers();
 }
 window.viewVerificationFile = async function (id) {
   window.showLoading();
@@ -2661,8 +2661,7 @@ window.openVolunteerDetailsModal = async function (id) {
 
     const modal = document.getElementById("volunteer-details-modal");
     if (modal) {
-      modal.classList.remove("hidden");
-      modal.classList.add("flex");
+      window.openModal(modal);
     }
     window.hideLoading();
   } catch (err) {
@@ -2672,11 +2671,7 @@ window.openVolunteerDetailsModal = async function (id) {
 };
 
 window.closeVolunteerDetailsModal = function () {
-  const modal = document.getElementById("volunteer-details-modal");
-  if (modal) {
-    modal.classList.add("hidden");
-    modal.classList.remove("flex");
-  }
+  window.closeModal("volunteer-details-modal");
 };
 
 window.updateVolunteerStatusFromModal = function (id, newStatus) {
@@ -2812,13 +2807,13 @@ function initializeEventListeners() {
   document
     .getElementById("confirm-cancel-btn")
     ?.addEventListener("click", () => {
-      document.getElementById("confirm-modal")?.classList.add("hidden");
+      window.closeModal("confirm-modal");
       pendingConfirmCallback = null;
     });
   document
     .getElementById("confirm-proceed-btn")
     ?.addEventListener("click", () => {
-      document.getElementById("confirm-modal")?.classList.add("hidden");
+      window.closeModal("confirm-modal");
       if (typeof pendingConfirmCallback === "function")
         pendingConfirmCallback();
       pendingConfirmCallback = null;
@@ -4354,9 +4349,11 @@ onSnapshot(
     c.innerHTML = h;
   },
 );
+let allEvents = [];
 onSnapshot(query(collection(db, "events"), orderBy("date", "asc")), (snap) => {
   const g = document.getElementById("events-grid");
   if (!g) return;
+  allEvents = [];
   if (snap.empty) {
     g.innerHTML =
       '<div class="col-span-full text-center py-10 text-stone-400 bg-white border rounded-xl">No events yet.</div>';
@@ -4366,6 +4363,7 @@ onSnapshot(query(collection(db, "events"), orderBy("date", "asc")), (snap) => {
   snap.forEach((d) => {
     const e = d.data(),
       id = d.id;
+    allEvents.push({ id, ...e });
     const et = (e.title || "").replace(/'/g, "\\'"),
       el = (e.location || "").replace(/'/g, "\\'"),
       ed = (e.desc || "").replace(/'/g, "\\'").replace(/\n/g, "<br>");
@@ -4373,23 +4371,54 @@ onSnapshot(query(collection(db, "events"), orderBy("date", "asc")), (snap) => {
       td = e.time ? formatTime(e.time) : "";
     const hi = e.imageUrl && e.imageUrl !== "";
     const is = hi
-      ? `<div class="h-40 bg-slate-100 overflow-hidden"><img src="${e.imageUrl}" alt="${et}" class="w-full h-full object-cover" loading="lazy"></div>`
-      : '<div class="h-32 bg-gradient-to-br from-victoria-dark via-victoria-blue to-victoria-accent flex items-center justify-center bg-pattern"><i class="fa-solid fa-calendar-day text-4xl text-white/70"></i></div>';
-    h += `<div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col group card overflow-hidden min-h-[330px]">${is}<div class="p-5 flex flex-col flex-1"><span class="text-[10px] font-bold uppercase bg-victoria-light text-victoria-blue px-2.5 py-1 rounded-md mb-2 inline-block w-fit">${e.type || e.category || "Event"}</span><h3 class="text-base font-bold">${e.title || ""}</h3><p class="text-xs text-stone-500 mt-1"><i class="fa-solid fa-calendar mr-1"></i>${dd}${td ? ` <span class="ml-2"><i class="fa-solid fa-clock mr-1"></i>${td}</span>` : ""}</p><p class="text-xs text-stone-500 mt-1"><i class="fa-solid fa-location-dot mr-1"></i>${e.location || "TBA"}</p><p class="text-xs text-stone-400 mt-1">By: ${e.createdBy || "Admin"}</p><div class="flex space-x-2 mt-auto pt-3"><button onclick="openAdminEventDetails('${et}','${dd}','${td}','${el}','${ed}')" class="flex-1 text-xs bg-white border font-bold py-2 rounded-lg"><i class="fa-solid fa-eye mr-1"></i>View</button><button onclick="event.stopPropagation();openEditEventModal('${id}')" class="text-xs bg-amber-50 text-amber-600 font-bold py-2 px-3 rounded-lg hover:bg-amber-600 hover:text-white"><i class="fa-solid fa-edit"></i></button><button onclick="event.stopPropagation();deleteEvent('${id}')" class="text-xs bg-red-50 text-red-600 font-bold py-2 px-3 rounded-lg hover:bg-red-600 hover:text-white"><i class="fa-solid fa-trash"></i></button></div></div></div>`;
+      ? `<div class="h-44 bg-slate-100 overflow-hidden"><img src="${e.imageUrl}" alt="${et}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy"></div>`
+      : '<div class="h-36 bg-gradient-to-br from-victoria-dark via-victoria-blue to-victoria-accent flex items-center justify-center bg-pattern"><i class="fa-solid fa-calendar-day text-4xl text-white/70"></i></div>';
+    h += `<div class="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-victoria-blue/40 transition-all flex flex-col group card overflow-hidden min-h-[330px] cursor-pointer" onclick="openAdminEventDetails('${id}')">${is}<div class="p-5 flex flex-col flex-1"><span class="text-[10px] font-bold uppercase bg-victoria-light text-victoria-blue px-2.5 py-1 rounded-md mb-2 inline-block w-fit">${e.type || e.category || "Event"}</span><h3 class="text-base font-bold text-slate-900 group-hover:text-victoria-blue transition-colors line-clamp-2">${e.title || ""}</h3><p class="text-xs text-stone-500 mt-1"><i class="fa-solid fa-calendar mr-1"></i>${dd}${td ? ` <span class="ml-2"><i class="fa-solid fa-clock mr-1"></i>${td}</span>` : ""}</p><p class="text-xs text-stone-500 mt-1"><i class="fa-solid fa-location-dot mr-1"></i>${e.location || "TBA"}</p><p class="text-xs text-stone-400 mt-1">By: ${e.createdBy || "Admin"}</p><div class="flex items-center justify-end space-x-2 mt-auto pt-3 border-t border-slate-100"><button type="button" onclick="event.stopPropagation();openEditEventModal('${id}')" class="text-xs bg-amber-50 text-amber-600 font-bold py-2 px-3 rounded-lg hover:bg-amber-600 hover:text-white transition-all shadow-xs" title="Edit Event"><i class="fa-solid fa-edit mr-1"></i>Edit</button><button type="button" onclick="event.stopPropagation();deleteEvent('${id}')" class="text-xs bg-red-50 text-red-600 font-bold py-2 px-3 rounded-lg hover:bg-red-600 hover:text-white transition-all shadow-xs" title="Delete Event"><i class="fa-solid fa-trash mr-1"></i>Delete</button></div></div></div>`;
   });
   g.innerHTML = h;
 });
-window.openAdminEventDetails = function (t, d, tm, l, desc) {
+window.openAdminEventDetails = function (idOrTitle, d, tm, l, desc) {
+  let e = allEvents.find((x) => x.id === idOrTitle);
+  let title = "", dateStr = "", timeStr = "", locStr = "", descStr = "", imgUrl = "";
+  if (e) {
+    title = e.title || "Untitled Event";
+    dateStr = e.date || "TBA";
+    timeStr = e.time ? formatTime(e.time) : "";
+    locStr = e.location || "TBA";
+    descStr = (e.desc || "No description provided.").replace(/\n/g, "<br>");
+    imgUrl = (e.imageUrl || e.image || "").trim();
+  } else {
+    title = idOrTitle || "";
+    dateStr = d || "TBA";
+    timeStr = tm || "";
+    locStr = l || "TBA";
+    descStr = desc || "";
+  }
+
   const mT = document.getElementById("admin-modal-event-title"),
     mD = document.getElementById("admin-modal-event-date"),
     mL = document.getElementById("admin-modal-event-location"),
-    mDesc = document.getElementById("admin-modal-event-desc");
-  if (!mT || !mD || !mL || !mDesc) return;
-  mT.innerText = t;
-  mD.innerHTML = `<i class="fa-solid fa-calendar mr-2"></i>Date: ${d}${tm ? ` at ${tm}` : ""}`;
-  mL.innerHTML = `<i class="fa-solid fa-location-dot mr-2"></i>Location: ${l}`;
-  mDesc.innerHTML = desc;
-  window.toggleModal("admin-view-event-modal");
+    mDesc = document.getElementById("admin-modal-event-desc"),
+    mImg = document.getElementById("admin-modal-event-img"),
+    mImgWrap = document.getElementById("admin-modal-event-img-wrap");
+
+  if (mT) mT.innerText = title;
+  if (mD) mD.innerHTML = `<i class="fa-solid fa-calendar mr-2 text-victoria-blue"></i>Date: ${dateStr}${timeStr ? ` at ${timeStr}` : ""}`;
+  if (mL) mL.innerHTML = `<i class="fa-solid fa-location-dot mr-2 text-victoria-blue"></i>Location: ${locStr}`;
+  if (mDesc) mDesc.innerHTML = descStr;
+
+  if (mImg && mImgWrap) {
+    if (imgUrl) {
+      mImg.src = imgUrl;
+      mImg.alt = title;
+      mImgWrap.classList.remove("hidden");
+    } else {
+      mImg.src = "";
+      mImgWrap.classList.add("hidden");
+    }
+  }
+
+  window.openModal("admin-view-event-modal");
 };
 window.viewVolunteerNotes = function (notes, name) {
   const modal = document.createElement("div");
@@ -4822,6 +4851,19 @@ window.switchTab = function (tabId) {
     }
   });
   saveActiveTab(tabId);
+
+  // Sync table result counts and active filters when switching tabs
+  if (tabId === "donations" && typeof window.filterDonations === "function") {
+    window.filterDonations();
+  } else if (tabId === "volunteers" && typeof window.filterVolunteers === "function") {
+    window.filterVolunteers();
+  } else if (tabId === "activity-logs" && typeof window.filterActivityLogs === "function") {
+    window.filterActivityLogs();
+  } else if (tabId === "hours" && typeof window.filterServiceHoursLedger === "function") {
+    window.filterServiceHoursLedger();
+  } else if (tabId === "contacts" && typeof window.filterContactMessages === "function") {
+    window.filterContactMessages();
+  }
 };
 
 // ===== EXPORT GLOBALS =====
@@ -5158,16 +5200,11 @@ function openDonationScreenshotModal(donationId) {
     actionsLeft.innerHTML = btns;
   }
 
-  modal.classList.remove("hidden");
-  modal.classList.add("flex");
+  window.openModal(modal);
 }
 
 function closeDonationScreenshotModal() {
-  const modal = document.getElementById("donation-screenshot-modal");
-  if (modal) {
-    modal.classList.add("hidden");
-    modal.classList.remove("flex");
-  }
+  window.closeModal("donation-screenshot-modal");
 }
 
 function updateDonationStatusFromProof(donationId, newStatus) {
@@ -5310,6 +5347,7 @@ window.saveServiceHourEdit = async function () {
     const hrEl = document.getElementById("hour-modal-hours");
     if (hrEl) hrEl.textContent = `${newHours} hrs`;
 
+    window.closeServiceHourDetailsModal();
     window.showAdminAlert("Hours Saved", `Successfully updated service hours to ${newHours} hrs.`, true);
   } catch (err) {
     window.showAdminAlert("Error", err.message || "Failed to update service hours.", false);
@@ -5345,3 +5383,6 @@ window.closeServiceHourDetailsModal = window.closeServiceHourDetailsModal;
 window.saveServiceHourEdit = window.saveServiceHourEdit;
 window.refundDonationRecord = window.refundDonationRecord;
 window.deleteDonationRecord = window.deleteDonationRecord;
+window.filterDonations = window.filterDonations;
+window.filterVolunteers = window.filterVolunteers;
+window.openAdminEventDetails = window.openAdminEventDetails;
