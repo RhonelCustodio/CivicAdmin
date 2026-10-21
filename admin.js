@@ -906,13 +906,12 @@ window.printActivityLogs = function () {
   } else {
     bodyRows = rows.map((r) => {
       const c = r.querySelectorAll("td");
-      if (c.length >= 4) {
+      if (c.length >= 3) {
         const residentName = (c[0]?.textContent || "").replace(/\s*NEW\s*$/, "").trim() || "";
         const eventTitle = c[1]?.textContent.trim() || "";
         const dateTime = (c[2]?.textContent || "").replace(/\s+/g, " ").trim() || "";
-        const status = c[3]?.textContent.trim() || "";
         const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        return `<tr><td>${esc(residentName)}</td><td>${esc(eventTitle)}</td><td>${esc(dateTime)}</td><td>${esc(status)}</td></tr>`;
+        return `<tr><td>${esc(residentName)}</td><td>${esc(eventTitle)}</td><td>${esc(dateTime)}</td></tr>`;
       }
       return "";
     }).join("");
@@ -921,7 +920,7 @@ window.printActivityLogs = function () {
   const tableHead =
     source === "hours"
       ? "<thead><tr><th>Resident Name</th><th>Event</th><th style=\"text-align:center\">Credited Hours</th><th>Date &amp; Time</th><th>Status</th></tr></thead>"
-      : "<thead><tr><th>Resident Name</th><th>Event</th><th>Date &amp; Time</th><th>Status</th></tr></thead>";
+      : "<thead><tr><th>Resident Name</th><th>Event</th><th>Date &amp; Time</th></tr></thead>";
   pw.document.write(
     `<!DOCTYPE html><html><head><title>${title}</title><style>
       body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#1e293b}
@@ -2767,7 +2766,7 @@ function renderAdminPortalLoading() {
   renderTableLoading("contact-messages-tbody", 6, 5);
   renderTableLoading("admin-volunteers-tbody", 7, 6);
   renderTableLoading("admin-hours-tbody", 5, 4);
-  renderTableLoading("activity-logs-tbody", 5, 5);
+  renderTableLoading("activity-logs-tbody", 4, 5);
   renderTableLoading("admin-donations-tbody", 6, 6);
   renderTableLoading("residents-tbody", 4, 6);
 }
@@ -4518,7 +4517,7 @@ function initActivityLogsListener() {
     (snap) => {
       if (snap.empty) {
         tbody.innerHTML =
-          '<tr><td colspan="5" class="px-4 py-6 text-center text-stone-400">No activity logs yet.</td></tr>';
+          '<tr><td colspan="4" class="px-4 py-6 text-center text-stone-400">No activity logs yet.</td></tr>';
         allActivityLogs = [];
         refreshActionBadges();
         return;
@@ -4562,27 +4561,21 @@ function renderSortedActivityLogs() {
   });
   if (sl.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="5" class="px-4 py-6 text-center text-stone-400">No activity logs yet.</td></tr>';
+      '<tr><td colspan="4" class="px-4 py-6 text-center text-stone-400">No activity logs yet.</td></tr>';
     return;
   }
   let h = "";
   sl.forEach((log) => {
-    let sb = "",
-      rs = "";
+    let rs = "";
     if (log.status === STATUS.REGISTERED) {
-      sb = '<span class="text-blue-600 text-xs font-bold">Active</span>';
       rs = "hover:bg-blue-50/50";
     } else if (log.status === STATUS.CANCELLED) {
-      sb = '<span class="text-red-600 text-xs font-bold">Cancelled</span>';
       rs = "hover:bg-red-50/50";
     } else if (log.status === STATUS.COMPLETED) {
-      sb = '<span class="text-emerald-600 text-xs font-bold">Credited</span>';
       rs = "hover:bg-emerald-50/50";
     } else if (log.status === STATUS.REJECTED) {
-      sb = '<span class="text-red-600 text-xs font-bold">Rejected</span>';
       rs = "hover:bg-red-50/50";
     } else {
-      sb = '<span class="text-amber-600 text-xs font-bold">Unknown</span>';
       rs = "hover:bg-stone-50";
     }
     const ts = log.timestamp?.toDate
@@ -4614,7 +4607,7 @@ function renderSortedActivityLogs() {
     actionsHtml += `<button type="button" onclick="event.stopPropagation(); deleteParticipantRecord('${escId}', '${escName}', '${escEvent}')" class="w-7 h-7 rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all flex items-center justify-center shrink-0" title="Delete this specific registration record"><i class="fa-solid fa-trash-can text-xs"></i></button>`;
     actionsHtml += "</div>";
 
-    h += `<tr class="border-b ${isNew ? "row-new " : ""}${rs} activity-log-row" data-status="${log.status || "unknown"}" data-resident="${(log.residentName || "").toLowerCase()}" data-event="${(log.eventTitle || "").toLowerCase()}"><td class="px-4 py-3 font-bold">${log.residentName || "N/A"}${isNew ? " " + newChipHtml() : ""}</td><td class="px-4 py-3 font-medium">${log.eventTitle || "N/A"}</td><td class="px-4 py-3"><div class="text-xs">${fd}</div><div class="text-xs text-stone-500">${ft}</div></td><td class="px-4 py-3">${sb}</td><td class="px-4 py-3 text-right">${actionsHtml}</td></tr>`;
+    h += `<tr class="border-b ${isNew ? "row-new " : ""}${rs} activity-log-row" data-status="${log.status || "unknown"}" data-resident="${(log.residentName || "").toLowerCase()}" data-event="${(log.eventTitle || "").toLowerCase()}"><td class="px-4 py-3 font-bold">${log.residentName || "N/A"}${isNew ? " " + newChipHtml() : ""}</td><td class="px-4 py-3 font-medium">${log.eventTitle || "N/A"}</td><td class="px-4 py-3"><div class="text-xs">${fd}</div><div class="text-xs text-stone-500">${ft}</div></td><td class="px-4 py-3 text-right">${actionsHtml}</td></tr>`;
   });
   tbody.innerHTML = h;
   window.filterActivityLogs();
