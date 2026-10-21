@@ -603,13 +603,21 @@ window.resetParticipantRegistration = function (id, residentName = "Resident") {
 
 window.deleteParticipantRecord = function (id, residentName = "Resident", eventTitle = "the event") {
   window.showConfirmPopup(
-    "Delete Registration Record?",
-    `Are you sure you want to delete this specific registration record for "${residentName}" (${eventTitle})? This cannot be undone.`,
+    "Move to Trash?",
+    `Are you sure you want to move the registration record for "${residentName}" (${eventTitle}) to trash? You can restore it later from the Trash view.`,
     async () => {
       window.showLoading();
       try {
-        await deleteDoc(doc(db, "participants", id));
-        window.showAdminAlert("Record Deleted", "Specific registration record deleted successfully.", true);
+        const snap = await getDoc(doc(db, "participants", id));
+        const currentStatus = snap.exists() ? (snap.data().status || STATUS.REGISTERED) : STATUS.REGISTERED;
+        await updateDoc(doc(db, "participants", id), {
+          status: STATUS.TRASHED,
+          previousStatus: currentStatus,
+          trashedAt: serverTimestamp(),
+          trashedBy: getAdminDisplayName(),
+          trashedById: loggedInAdmin?.id || "system",
+        });
+        window.showAdminAlert("Moved to Trash", `Registration record for "${residentName}" has been moved to trash.`, true);
       } catch (err) {
         window.showAdminAlert("Error", err.message, false);
       } finally {
