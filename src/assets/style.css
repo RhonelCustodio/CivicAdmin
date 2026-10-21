@@ -315,17 +315,3 @@ textarea:focus {
         transform: translateX(320%);
     }
 }
-
-
-/* Ensure alert, confirm, and loading overlays always sit above all other modals */
-#confirm-modal {
-    z-index: 500 !important;
-}
-
-#admin-alert-modal {
-    z-index: 510 !important;
-}
-
-#global-loading {
-    z-index: 520 !important;
-}

@@ -431,6 +431,8 @@ window.showConfirmPopup = function (title, text, proceedCallback) {
 window.openModal = function (id) {
   const modal = document.getElementById(id);
   if (modal) {
+    // Clear any inline display override set by closeModal before toggling classes.
+    modal.style.removeProperty("display");
     modal.classList.remove("hidden");
     modal.classList.add("flex");
   }
@@ -440,17 +442,29 @@ window.closeModal = function (id) {
   if (modal) {
     modal.classList.add("hidden");
     modal.classList.remove("flex");
+    // Belt-and-suspenders: force display:none so no inline style or
+    // animation can keep the modal visible while the success alert shows.
+    modal.style.display = "none";
   }
+};
+window._reopenModal = function (id) {
+  // Companion to closeModal — call this to restore normal modal display
+  // (removes the inline style set by closeModal so Tailwind classes take over).
+  const modal = document.getElementById(id);
+  if (modal) modal.style.removeProperty("display");
 };
 window.toggleModal = function (id) {
   const modal = document.getElementById(id);
   if (!modal) return;
   if (modal.classList.contains("hidden")) {
+    // Clear any forced inline display before opening so Tailwind flex takes over.
+    modal.style.removeProperty("display");
     modal.classList.remove("hidden");
     modal.classList.add("flex");
   } else {
     modal.classList.add("hidden");
     modal.classList.remove("flex");
+    modal.style.display = "none";
   }
 };
 async function createNotification(
@@ -3019,8 +3033,11 @@ async function handleEventSubmit(e) {
     window.hideLoading();
   }
 }
+// Submission-in-progress guard — prevents double-click / duplicate submits
+let _editEventSubmitting = false;
 async function handleEditEventSubmit(e) {
   e.preventDefault();
+  if (_editEventSubmitting) return; // guard against double-submit
   const id = document.getElementById("edit-event-id")?.value;
   if (!id) {
     window.showAdminAlert("Error", "No event selected.", false);
@@ -3037,6 +3054,7 @@ async function handleEditEventSubmit(e) {
     window.showAdminAlert("Error", "Fill all fields.", false);
     return;
   }
+  _editEventSubmitting = true;
   window.showLoading();
   try {
     const selectedSource =
@@ -3073,15 +3091,19 @@ async function handleEditEventSubmit(e) {
     };
     if (tm) ud.time = tm;
     await updateDoc(doc(db, "events", id), ud);
+    // Definitively close the edit modal BEFORE showing the success alert
+    // so both never appear on screen simultaneously. closeModal now also
+    // sets an inline display:none as a belt-and-suspenders guarantee.
     window.closeModal("edit-event-modal");
     document.getElementById("edit-event-form")?.reset();
     const editIdInput = document.getElementById("edit-event-id");
     if (editIdInput) editIdInput.value = "";
-    window.showAdminAlert("Success", "Updated!", true);
+    window.showAdminAlert("Event Updated", "Event details have been updated successfully.", true);
   } catch (err) {
     window.showAdminAlert("Error", err.message, false);
   } finally {
     window.hideLoading();
+    _editEventSubmitting = false;
   }
 }
 window.openEditEventModal = async function (id) {
@@ -5311,6 +5333,7 @@ document.addEventListener("click", function (e) {
 
 window.openModal = window.openModal;
 window.closeModal = window.closeModal;
+window._reopenModal = window._reopenModal;
 window.rejectParticipantRegistration = window.rejectParticipantRegistration;
 window.resetParticipantRegistration = window.resetParticipantRegistration;
 window.deleteParticipantRecord = window.deleteParticipantRecord;
