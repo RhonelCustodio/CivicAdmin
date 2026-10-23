@@ -11,15 +11,17 @@ open until delivery finishes.
 
 1. Create an EmailJS account and connect an email service you are authorized to
    use as the sender.
-2. Create an email template with these settings:
+2. Create separate announcement and event templates with these settings:
    - **To Email:** `{{to_email}}`
    - **Subject:** `Victoria Civic Portal: {{content_type}} - {{title}}`
    - **Body:** include `{{content_type}}`, `{{title}}`, and
      `{{description}}`. For announcement details, use `{{priority}}`. For event
      details, use `{{event_date}}`, `{{event_time}}`, `{{location}}`, and
      `{{category}}`. Optionally include `{{image_url}}`.
-3. In the EmailJS dashboard, find the service ID, template ID, and public key.
-4. Add those three values to `CivicAdmin/firebase-config/email-config.js` and
+3. In the EmailJS dashboard, find the service ID, both template IDs, and public
+   key.
+4. Add the service ID and public key, plus `announcementTemplateId` and
+   `eventTemplateId`, to `CivicAdmin/firebase-config/email-config.js` and
    `CivicOrganizer/firebase-config/email-config.js`. These values are public
    browser configuration; never put a private key or email-service password in
    either file.

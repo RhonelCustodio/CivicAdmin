@@ -1,6 +1,6 @@
 export const emailJsConfig = {
-  serviceId: "service_piibt33",
-  templateId: "template_v88kcv8",
-  publicKey: "pF6AWbQXGD9MJtIJk",
-};
-  
+  serviceId: "service_m8m5r0j",
+  announcementTemplateId: "template_5cgn6of",
+  eventTemplateId: "template_ze5n2tb",
+  publicKey: "vS44jFOB4kjQoZg8f",
+}

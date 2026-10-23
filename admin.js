@@ -3139,20 +3139,42 @@ async function handleLogin(e) {
     window.hideLoading();
   }
 }
-function isEmailJsConfigured() {
+function getEmailTemplateId(postType) {
+  const normalizedType = String(postType || "").trim().toLowerCase();
+  if (normalizedType === "event") {
+    return String(emailJsConfig.eventTemplateId || "").trim();
+  }
+  if (normalizedType === "announcement") {
+    return String(emailJsConfig.announcementTemplateId || "").trim();
+  }
+  return "";
+}
+
+function isEmailJsConfigured(postType) {
   return Boolean(
     emailJsConfig.publicKey &&
       emailJsConfig.serviceId &&
-      emailJsConfig.templateId,
+      getEmailTemplateId(postType),
   );
+}
+
+function emailJsConfigurationMessage(postType) {
+  if (!getEmailTemplateId(postType)) {
+    const type = String(postType || "post").trim().toLowerCase();
+    return `${type} email template ID is missing or unsupported in firebase-config/email-config.js.`;
+  }
+  return "EmailJS service ID or public key is missing from firebase-config/email-config.js.";
 }
 
 async function dispatchPostEmails(collectionName, postId, post, postType) {
   const postRef = doc(db, collectionName, postId);
+  const templateId = getEmailTemplateId(postType);
   try {
     await updateDoc(postRef, {
       emailDelivery: {
         status: "sending",
+        postType,
+        templateId,
         startedAt: serverTimestamp(),
       },
     });
@@ -3193,6 +3215,12 @@ async function dispatchPostEmails(collectionName, postId, post, postType) {
     let failedCount = 0;
     const deliveryErrors = [];
     for (let i = 0; i < recipientEmails.length; i++) {
+      const recipientEmail = String(recipientEmails[i] || "").trim();
+      if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+        deliveryErrors.push(`Skipped invalid recipient address at index ${i}.`);
+        continue;
+      }
+
       if (i > 0) {
         await new Promise((resolve) => setTimeout(resolve, 1050));
       }
@@ -3204,10 +3232,10 @@ async function dispatchPostEmails(collectionName, postId, post, postType) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               service_id: emailJsConfig.serviceId,
-              template_id: emailJsConfig.templateId,
+              template_id: templateId,
               user_id: emailJsConfig.publicKey,
               template_params: {
-                to_email: recipientEmails[i],
+                to_email: recipientEmail,
                 title: post.title,
                 content_type: postType,
                 priority: post.priority || "",
@@ -3246,6 +3274,8 @@ async function dispatchPostEmails(collectionName, postId, post, postType) {
     await updateDoc(postRef, {
       emailDelivery: {
         status: failedCount === 0 ? "sent" : sentCount > 0 ? "partial" : "failed",
+        postType,
+        templateId,
         recipientCount: recipientEmails.length,
         sentCount,
         failedCount,
@@ -3268,10 +3298,14 @@ async function dispatchPostEmails(collectionName, postId, post, postType) {
 }
 
 async function markEmailNotConfigured(postRef, postType) {
+  const missingTemplate = !getEmailTemplateId(postType);
   await updateDoc(postRef, {
     emailDelivery: {
       status: "not_configured",
       postType,
+      error: missingTemplate
+        ? `${postType} email template ID is missing from firebase-config/email-config.js.`
+        : "EmailJS service ID or public key is missing from firebase-config/email-config.js.",
       updatedAt: serverTimestamp(),
     },
   });
@@ -3322,7 +3356,7 @@ async function handleAnnouncementSubmit(e) {
       collection(db, "announcements"),
       announcement,
     );
-    if (isEmailJsConfigured()) {
+    if (isEmailJsConfigured("Announcement")) {
       void dispatchPostEmails(
         "announcements",
         announcementRef.id,
@@ -3342,9 +3376,9 @@ async function handleAnnouncementSubmit(e) {
     }
     window.showAdminAlert(
       "Announcement Posted",
-      isEmailJsConfigured()
+      isEmailJsConfigured("Announcement")
         ? "The announcement was posted. Email delivery is starting; keep this page open until it finishes."
-        : "The announcement was posted, but email delivery is not configured yet. Follow EMAIL_SETUP.md to connect the free EmailJS service.",
+        : `The announcement was posted, but ${emailJsConfigurationMessage("Announcement")}`,
       true,
     );
   } catch (err) {
@@ -3408,7 +3442,7 @@ async function handleEventSubmit(e) {
     };
     if (etm?.value?.trim()) edata.time = etm.value.trim();
     const eventRef = await addDoc(collection(db, "events"), edata);
-    if (isEmailJsConfigured()) {
+    if (isEmailJsConfigured("Event")) {
       void dispatchPostEmails("events", eventRef.id, edata, "Event");
     } else {
       void markEmailNotConfigured(eventRef, "Event").catch((err) => {
@@ -3423,9 +3457,9 @@ async function handleEventSubmit(e) {
     }
     window.showAdminAlert(
       "Success",
-      isEmailJsConfigured()
+      isEmailJsConfigured("Event")
         ? "Event created. Email delivery is starting; keep this page open until it finishes."
-        : "Event created, but email delivery is not configured yet. Follow EMAIL_SETUP.md to connect EmailJS.",
+        : `Event created, but ${emailJsConfigurationMessage("Event")}`,
       true,
     );
   } catch (err) {
