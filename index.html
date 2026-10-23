@@ -226,6 +226,10 @@
                             class="fa-solid fa-hand-holding-heart w-5 text-center text-victoria-gold"></i><span>Donations</span>
                         <span id="badge-donations" class="nav-badge hidden" aria-hidden="true">0</span>
                     </button>
+                    <button type="button" data-tab="trash" onclick="switchTab('trash'); loadAdminTrashCategory('donations')"
+                        class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[12px] text-blue-50/90 hover:bg-white/10">
+                        <i class="fa-solid fa-trash-can w-5 text-center text-victoria-gold"></i><span>Trash</span>
+                    </button>
                     <button type="button" data-tab="residents" onclick="switchTab('residents')"
                         class="nav-link w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[12px] text-blue-50/90 hover:bg-white/10">
                         <i class="fa-solid fa-users w-5 text-center text-victoria-gold"></i><span>Residents
@@ -243,17 +247,6 @@
 
             <!-- Main Content Area -->
             <main class="flex-1 h-screen overflow-y-auto bg-slate-50">
-                <!-- Sticky Header -->
-                <header
-                    class="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 px-8 py-4 flex items-center justify-between">
-                    <div>
-                        <p class="text-[11px] uppercase tracking-[.18em] text-slate-400 font-bold">Municipality of
-                            Victoria</p>
-                        <h2 id="page-title" class="text-lg font-extrabold text-victoria-blue mt-0.5">Announcements</h2>
-                    </div>
-                    <!-- Header badge removed as requested (Full Access Terminal / System Administrator / Refresh) -->
-                </header>
-
                 <!-- Content Container -->
                 <div class="p-8 max-w-[1600px] mx-auto">
 
@@ -706,14 +699,6 @@
                                         <option value="name-desc">Donor Name (Z to A)</option>
                                     </select>
                                     <span id="donation-result-count" class="text-xs font-semibold text-slate-500 whitespace-nowrap">0 records</span>
-                                    <div class="hidden sm:block w-px h-6 bg-slate-300"></div>
-                                    <span class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1.5 whitespace-nowrap" title="Donation data is strictly preserved for municipal financial accountability. Deletion is prevented to avoid negligence and misuse.">
-                                        <i class="fa-solid fa-shield-halved text-emerald-600"></i><span>Audit Protected Ledger</span>
-                                    </span>
-                                    <button onclick="viewDonationTrash()"
-                                        class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 transition-all inline-flex items-center gap-1.5 whitespace-nowrap">
-                                        <i class="fa-solid fa-trash-arrow-up"></i><span>View Trash</span>
-                                    </button>
                                     <button onclick="printDonations()"
                                         class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-victoria-blue text-white hover:bg-victoria-dark transition-all shadow-sm inline-flex items-center gap-1.5 whitespace-nowrap">
                                         <i class="fa-solid fa-file-pdf"></i><span>Print as PDF</span>
@@ -732,6 +717,7 @@
                                             <th class="px-5 py-4 text-left">Purpose</th>
                                             <th class="px-5 py-4 text-left">Date</th>
                                             <th class="px-5 py-4 text-left">Status</th>
+                                            <th class="px-5 py-4 text-left">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody id="admin-donations-tbody" class="divide-y divide-slate-100">
@@ -800,6 +786,53 @@
                                         </tr>
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section id="trash" class="tab-content hidden">
+                        <div class="pb-5 mb-6 border-b border-slate-200">
+                            <p class="text-xs font-bold text-victoria-accent uppercase tracking-[.16em]">Record management</p>
+                            <h1 class="text-3xl font-extrabold text-victoria-blue tracking-tight mt-1">Trash</h1>
+                            <p class="text-sm text-slate-500 mt-1">Review deleted records and restore them when needed.</p>
+                        </div>
+                        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                            <div class="p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
+                                <div>
+                                    <h2 class="font-bold text-slate-800 flex items-center gap-2">
+                                        <i class="fa-solid fa-trash-can text-victoria-blue"></i>
+                                        <span id="admin-trash-title">Trashed records</span>
+                                    </h2>
+                                    <p class="text-xs text-slate-400 mt-1" id="admin-trash-count">Choose a record type to view trash.</p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2" id="admin-trash-actions">
+                                    <select id="admin-trash-category" onchange="loadAdminTrashCategory(this.value)"
+                                        class="border-slate-300 rounded-lg px-3.5 py-2 text-sm font-medium text-slate-700 bg-white focus:border-victoria-blue">
+                                        <option value="donations">Donations</option>
+                                        <option value="participants">Registration activity</option>
+                                        <option value="volunteers">Volunteers</option>
+                                        <option value="events">Events</option>
+                                        <option value="announcements">Announcements</option>
+                                        <option value="contact_messages">Feedback</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="overflow-auto max-h-[650px]">
+                                <table class="w-full text-sm sticky-table sticky-header">
+                                    <thead id="admin-trash-thead"></thead>
+                                    <tbody class="divide-y divide-slate-100" id="admin-trash-tbody">
+                                        <tr>
+                                            <td class="px-4 py-10 text-center text-slate-400" colspan="5">
+                                                Select a record type to view its trash.
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="p-4 border-t border-slate-200 bg-slate-50">
+                                <p class="text-xs text-slate-400 text-center" id="admin-trash-footer">
+                                    <i class="fa-solid fa-circle-info mr-1"></i>Trashed records can be restored.
+                                </p>
                             </div>
                         </div>
                     </section>

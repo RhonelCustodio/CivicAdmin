@@ -1,5 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { firebaseConfig } from "./firebase-config/firebase-config.js";
+import { emailJsConfig } from "./firebase-config/email-config.js";
 import {
   getFirestore,
   collection,
@@ -32,6 +33,10 @@ const STATUS = {
   TRASHED: "Trashed",
   REFUNDED: "Refunded",
 };
+
+function isTrashedRecord(record) {
+  return String(record?.status ?? "").trim().toLowerCase() === STATUS.TRASHED.toLowerCase();
+}
 
 /* ============================================================
    ADMIN UPDATE PACK — mirrored from Resident Hub / Organizer Console
@@ -627,6 +632,229 @@ window.deleteParticipantRecord = function (id, residentName = "Resident", eventT
   );
 };
 
+function renderAdminTrashTab(category, title, count, headers, rows, bulkActions, emptyMessage) {
+  const titleEl = document.getElementById("admin-trash-title");
+  const countEl = document.getElementById("admin-trash-count");
+  const headEl = document.getElementById("admin-trash-thead");
+  const bodyEl = document.getElementById("admin-trash-tbody");
+  const actionsEl = document.getElementById("admin-trash-actions");
+  const categorySelect = document.getElementById("admin-trash-category");
+  const footerEl = document.getElementById("admin-trash-footer");
+  if (!titleEl || !countEl || !headEl || !bodyEl || !actionsEl) {
+    throw new Error("The admin Trash tab is unavailable.");
+  }
+
+  if (categorySelect) categorySelect.value = category;
+  const pluralTitle =
+    category === "participants" ? "registration activities" : `${title.toLowerCase()}s`;
+  titleEl.textContent = `Trashed ${pluralTitle}`;
+  countEl.textContent = `${count} ${count === 1 ? title.toLowerCase() : pluralTitle} in trash`;
+  headEl.innerHTML = `<tr class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">${headers
+    .map((header) => `<th class="px-4 py-4 text-left">${header}</th>`)
+    .join("")}</tr>`;
+  bodyEl.innerHTML =
+    rows ||
+    `<tr><td colspan="${headers.length}" class="px-4 py-12 text-center text-slate-400"><i class="fa-solid fa-trash-can text-3xl mb-3 block text-slate-300"></i><span class="text-sm font-semibold">${emptyMessage}</span></td></tr>`;
+
+  const bulkActionsMarkup =
+    count > 0
+      ? `<button type="button" onclick="${bulkActions.empty}" class="px-3.5 py-2 rounded-lg text-xs font-semibold bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 inline-flex items-center gap-1.5"><i class="fa-solid fa-trash-can"></i>Empty Trash</button><button type="button" onclick="${bulkActions.restore}" class="px-3.5 py-2 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 inline-flex items-center gap-1.5"><i class="fa-solid fa-rotate-left"></i>Restore All</button>`
+      : "";
+  actionsEl.innerHTML = `<select id="admin-trash-category" onchange="loadAdminTrashCategory(this.value)" class="border-slate-300 rounded-lg px-3.5 py-2 text-sm font-medium text-slate-700 bg-white focus:border-victoria-blue"><option value="donations">Donations</option><option value="participants">Registration activity</option><option value="volunteers">Volunteers</option><option value="events">Events</option><option value="announcements">Announcements</option><option value="contact_messages">Feedback</option></select>${bulkActionsMarkup}`;
+  const updatedSelect = document.getElementById("admin-trash-category");
+  if (updatedSelect) updatedSelect.value = category;
+  if (footerEl) {
+    footerEl.innerHTML =
+      '<i class="fa-solid fa-circle-info mr-1"></i>Restore records to return them to their original collection.';
+  }
+  window.switchTab("trash");
+}
+
+window.loadAdminTrashCategory = function (category) {
+  const loaders = {
+    participants: window.viewTrashLogs,
+    donations: window.viewDonationTrash,
+    volunteers: window.viewVolunteerTrash,
+    events: () => window.viewAdminRecordTrash("events"),
+    announcements: () => window.viewAdminRecordTrash("announcements"),
+    contact_messages: () => window.viewAdminRecordTrash("contact_messages"),
+  };
+  const load = loaders[category];
+  if (!load) {
+    window.showAdminAlert("Invalid record type", "Select a valid trash category.", false);
+    return;
+  }
+  load();
+};
+
+const ADMIN_TRASH_COLLECTIONS = {
+  events: { title: "event", restoreStatus: "Active" },
+  announcements: { title: "announcement", restoreStatus: "Active" },
+  contact_messages: { title: "feedback message", restoreStatus: "New" },
+};
+
+window.viewAdminRecordTrash = async function (category) {
+  const collectionConfig = ADMIN_TRASH_COLLECTIONS[category];
+  if (!collectionConfig) {
+    window.showAdminAlert("Invalid record type", "Select a valid trash category.", false);
+    return;
+  }
+  window.showLoading();
+  try {
+    const snapshot = await getDocs(
+      query(collection(db, category), where("status", "==", STATUS.TRASHED)),
+    );
+    const records = [];
+    snapshot.forEach((record) => records.push({ id: record.id, ...record.data() }));
+    records.sort((a, b) => {
+      const dateA = a.trashedAt?.toDate ? a.trashedAt.toDate() : new Date(a.trashedAt || 0);
+      const dateB = b.trashedAt?.toDate ? b.trashedAt.toDate() : new Date(b.trashedAt || 0);
+      return dateB - dateA;
+    });
+    const rows = records
+      .map((record) => {
+        const id = record.id;
+        const name =
+          category === "events" || category === "announcements"
+            ? record.title || "Untitled"
+            : record.name || record.senderName || record.email || "Feedback message";
+        const safeName = escapeAdminHtml(name);
+        const deletedAt = record.trashedAt
+          ? formatFirebaseTimestamp(record.trashedAt)
+          : "N/A";
+        const previousStatus = escapeAdminHtml(record.previousStatus || "Unknown");
+        const deletedBy = escapeAdminHtml(record.trashedBy || "Admin");
+        return `<tr class="hover:bg-slate-50"><td class="px-4 py-3"><div class="font-bold">${safeName}</div><div class="text-[10px] text-red-500"><i class="fa-solid fa-trash-can mr-1"></i>Deleted: ${deletedAt}</div><div class="text-[10px] text-stone-400">By: ${deletedBy}</div></td><td class="px-4 py-3">${previousStatus}</td><td class="px-4 py-3"><span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-bold">Trashed</span></td><td class="px-4 py-3"><div class="flex gap-1.5"><button onclick="restoreAdminRecord('${category}', '${id}')" class="text-xs px-3 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-medium"><i class="fa-solid fa-rotate-left"></i> Restore</button><button onclick="permanentlyDeleteAdminRecord('${category}', '${id}')" class="text-xs px-3 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-medium"><i class="fa-solid fa-trash"></i> Delete</button></div></td></tr>`;
+      })
+      .join("");
+    renderAdminTrashTab(
+      category,
+      `${collectionConfig.title} record`,
+      records.length,
+      ["Record", "Previous Status", "Status", "Actions"],
+      rows,
+      {
+        empty: `emptyAdminRecordTrash('${category}')`,
+        restore: `restoreAllAdminRecords('${category}')`,
+      },
+      "Trash is empty",
+    );
+  } catch (err) {
+    window.showAdminAlert("Error", `Failed to load Trash: ${err.message}`, false);
+  } finally {
+    window.hideLoading();
+  }
+};
+
+window.restoreAdminRecord = function (category, id) {
+  const config = ADMIN_TRASH_COLLECTIONS[category];
+  if (!config) return;
+  window.showConfirmPopup("Restore Record", "Restore this record?", async () => {
+    window.showLoading();
+    try {
+      const ref = doc(db, category, id);
+      const snapshot = await getDoc(ref);
+      if (!snapshot.exists()) throw new Error("Record not found.");
+      const record = snapshot.data();
+      await updateDoc(ref, {
+        status: record.previousStatus || config.restoreStatus,
+        restoredAt: serverTimestamp(),
+        restoredBy: getAdminDisplayName(),
+        restoredById: loggedInAdmin?.id || "system",
+        trashedAt: null,
+        trashedBy: null,
+        trashedById: null,
+        previousStatus: null,
+      });
+      window.showAdminAlert("Record Restored", "Record restored successfully.", true);
+      window.viewAdminRecordTrash(category);
+    } catch (err) {
+      window.showAdminAlert("Error", err.message, false);
+    } finally {
+      window.hideLoading();
+    }
+  });
+};
+
+window.permanentlyDeleteAdminRecord = function (category, id) {
+  if (!ADMIN_TRASH_COLLECTIONS[category]) return;
+  window.showConfirmPopup("Permanently Delete", "This cannot be undone.", async () => {
+    window.showLoading();
+    try {
+      await deleteDoc(doc(db, category, id));
+      window.showAdminAlert("Record Deleted", "Record permanently deleted.", true);
+      window.viewAdminRecordTrash(category);
+    } catch (err) {
+      window.showAdminAlert("Error", err.message, false);
+    } finally {
+      window.hideLoading();
+    }
+  });
+};
+
+window.emptyAdminRecordTrash = function (category) {
+  if (!ADMIN_TRASH_COLLECTIONS[category]) return;
+  window.showConfirmPopup("Empty Trash", "Permanently delete all records in this Trash category?", async () => {
+    window.showLoading();
+    try {
+      const snapshot = await getDocs(
+        query(collection(db, category), where("status", "==", STATUS.TRASHED)),
+      );
+      if (snapshot.empty) {
+        window.showAdminAlert("Trash Empty", "There are no records to delete.", false);
+        return;
+      }
+      const batch = writeBatch(db);
+      snapshot.forEach((record) => batch.delete(record.ref));
+      await batch.commit();
+      window.showAdminAlert("Trash Emptied", `${snapshot.size} record(s) deleted.`, true);
+      window.viewAdminRecordTrash(category);
+    } catch (err) {
+      window.showAdminAlert("Error", err.message, false);
+    } finally {
+      window.hideLoading();
+    }
+  });
+};
+
+window.restoreAllAdminRecords = function (category) {
+  const config = ADMIN_TRASH_COLLECTIONS[category];
+  if (!config) return;
+  window.showConfirmPopup("Restore All Records", "Restore all records in this Trash category?", async () => {
+    window.showLoading();
+    try {
+      const snapshot = await getDocs(
+        query(collection(db, category), where("status", "==", STATUS.TRASHED)),
+      );
+      if (snapshot.empty) {
+        window.showAdminAlert("Trash Empty", "There are no records to restore.", false);
+        return;
+      }
+      const batch = writeBatch(db);
+      snapshot.forEach((record) => {
+        const data = record.data();
+        batch.update(record.ref, {
+          status: data.previousStatus || config.restoreStatus,
+          restoredAt: serverTimestamp(),
+          restoredBy: getAdminDisplayName(),
+          restoredById: loggedInAdmin?.id || "system",
+          trashedAt: null,
+          trashedBy: null,
+          trashedById: null,
+          previousStatus: null,
+        });
+      });
+      await batch.commit();
+      window.showAdminAlert("Records Restored", `${snapshot.size} record(s) restored.`, true);
+      window.viewAdminRecordTrash(category);
+    } catch (err) {
+      window.showAdminAlert("Error", err.message, false);
+    } finally {
+      window.hideLoading();
+    }
+  });
+};
+
 window.viewTrashLogs = async function () {
   window.showLoading();
   try {
@@ -649,19 +877,8 @@ window.viewTrashLogs = async function () {
         : new Date(b.trashedAt || 0);
       return dB - dA;
     });
-    const em = document.getElementById("trash-logs-modal");
-    if (em) em.remove();
-    const modal = document.createElement("div");
-    modal.className =
-      "fixed inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[180] overflow-hidden";
-    modal.id = "trash-logs-modal";
-    modal.addEventListener("click", function (e) {
-      if (e.target === modal) modal.remove();
-    });
     let tr = "";
-    if (tl.length === 0) {
-      tr = `<tr><td colspan="5" class="px-4 py-10 text-center text-gray-400"><i class="fa-solid fa-trash-can text-4xl mb-3 block text-gray-300"></i><p class="text-lg font-bold text-gray-500">Trash is Empty</p></td></tr>`;
-    } else {
+    if (tl.length > 0) {
       tl.forEach((log) => {
         const id = log.id;
         let ab = "";
@@ -696,11 +913,18 @@ window.viewTrashLogs = async function () {
         const td = log.trashedAt
           ? formatFirebaseTimestamp(log.trashedAt)
           : "N/A";
-        tr += `<tr class="border-b bg-red-50/30 hover:bg-red-100/50"><td class="px-4 py-3"><div class="font-bold">${log.residentName || "N/A"}</div><div class="text-[10px] text-red-500"><i class="fa-solid fa-trash-can mr-1"></i>Deleted: ${td}</div><div class="text-[10px] text-stone-400">By: ${log.trashedBy || "Admin"}</div></td><td class="px-4 py-3 font-medium">${log.eventTitle || "N/A"}</td><td class="px-4 py-3"><div class="text-xs">${fd}</div><div class="text-xs text-stone-400">${ft}</div></td><td class="px-4 py-3"><span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-bold"><i class="fa-solid fa-trash-can text-[10px]"></i> Trashed</span></td><td class="px-4 py-3"><div class="flex gap-1.5"><button onclick="event.stopPropagation();restoreActivityLog('${id}')" class="text-xs px-3 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-medium"><i class="fa-solid fa-rotate-left"></i> Restore</button><button onclick="event.stopPropagation();permanentlyDeleteActivityLog('${id}')" class="text-xs px-3 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-medium"><i class="fa-solid fa-trash"></i> Delete</button></div></td></tr>`;
+        tr += `<tr class="hover:bg-slate-50"><td class="px-4 py-3"><div class="font-bold">${log.residentName || "N/A"}</div><div class="text-[10px] text-red-500"><i class="fa-solid fa-trash-can mr-1"></i>Deleted: ${td}</div><div class="text-[10px] text-stone-400">By: ${log.trashedBy || "Admin"}</div></td><td class="px-4 py-3 font-medium">${log.eventTitle || "N/A"}</td><td class="px-4 py-3"><div class="text-xs">${fd}</div><div class="text-xs text-stone-400">${ft}</div></td><td class="px-4 py-3"><span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-bold"><i class="fa-solid fa-trash-can text-[10px]"></i> Trashed</span></td><td class="px-4 py-3"><div class="flex gap-1.5"><button onclick="event.stopPropagation();restoreActivityLog('${id}')" class="text-xs px-3 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-medium"><i class="fa-solid fa-rotate-left"></i> Restore</button><button onclick="event.stopPropagation();permanentlyDeleteActivityLog('${id}')" class="text-xs px-3 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-medium"><i class="fa-solid fa-trash"></i> Delete</button></div></td></tr>`;
       });
     }
-    modal.innerHTML = `<div class="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl border border-gray-200 modal-enter flex flex-col" style="margin:auto"><div class="p-6 border-b flex items-center justify-between shrink-0 bg-white rounded-t-2xl"><div><h2 class="text-xl font-extrabold text-red-700"><i class="fa-solid fa-trash-can"></i> Trash - Deleted Activity Logs</h2><p class="text-sm text-stone-500">${tl.length || 0} log(s) in trash</p></div><div class="flex items-center gap-3">${tl.length > 0 ? `<button onclick="emptyAllTrash()" class="text-xs px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-semibold"><i class="fa-solid fa-trash-can"></i> Empty Trash</button><button onclick="restoreAllTrash()" class="text-xs px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-semibold"><i class="fa-solid fa-rotate-left"></i> Restore All</button>` : ""}<button onclick="document.getElementById('trash-logs-modal').remove()" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button></div></div><div class="overflow-y-auto flex-1" style="min-height:0"><table class="w-full text-sm"><thead class="sticky top-0 z-10"><tr class="bg-red-50 text-xs font-semibold text-red-700 uppercase"><th class="px-4 py-3 text-left bg-red-50">Resident Name</th><th class="px-4 py-3 text-left bg-red-50">Event</th><th class="px-4 py-3 text-left bg-red-50">Date & Time</th><th class="px-4 py-3 text-left bg-red-50">Status</th><th class="px-4 py-3 text-left bg-red-50">Actions</th></tr></thead><tbody class="divide-y divide-gray-100">${tr}</tbody></table></div><div class="p-4 border-t bg-gray-50 shrink-0 rounded-b-2xl"><p class="text-xs text-stone-400 text-center"><i class="fa-solid fa-info-circle mr-1"></i>Trashed logs can be restored.</p></div></div>`;
-    document.body.appendChild(modal);
+    renderAdminTrashTab(
+      "participants",
+      "registration activity",
+      tl.length,
+      ["Resident Name", "Event", "Date & Time", "Status", "Actions"],
+      tr,
+      { empty: "emptyAllTrash()", restore: "restoreAllTrash()" },
+      "Trash is empty",
+    );
     window.hideLoading();
   } catch (err) {
     window.hideLoading();
@@ -727,8 +951,7 @@ window.restoreActivityLog = function (id) {
         trashedById: null,
         previousStatus: null,
       });
-      const m = document.getElementById("trash-logs-modal");
-      if (m) m.remove();
+      window.viewTrashLogs();
       window.showAdminAlert("Log Restored", "Restored.", true);
     } catch (err) {
       window.hideLoading();
@@ -746,8 +969,7 @@ window.permanentlyDeleteActivityLog = function (id) {
       window.showLoading();
       try {
         await deleteDoc(doc(db, "participants", id));
-        const m = document.getElementById("trash-logs-modal");
-        if (m) m.remove();
+        window.viewTrashLogs();
         window.showAdminAlert("Log Deleted", "Permanently deleted.", true);
       } catch (err) {
         window.hideLoading();
@@ -783,8 +1005,7 @@ window.emptyAllTrash = function () {
           c++;
         });
         await b.commit();
-        const m = document.getElementById("trash-logs-modal");
-        if (m) m.remove();
+        window.viewTrashLogs();
         window.showAdminAlert("Trash Emptied", `${c} log(s) deleted.`, true);
       } catch (err) {
         window.hideLoading();
@@ -830,8 +1051,7 @@ window.restoreAllTrash = function () {
           c++;
         });
         await b.commit();
-        const m = document.getElementById("trash-logs-modal");
-        if (m) m.remove();
+        window.viewTrashLogs();
         window.showAdminAlert("All Restored", `${c} log(s) restored.`, true);
       } catch (err) {
         window.hideLoading();
@@ -1020,16 +1240,33 @@ window.clearDonations = function () {
 
 window.deleteDonationRecord = function (id, donorName = "Donor") {
   window.showConfirmPopup(
-    "Delete Donation Record?",
-    `Are you sure you want to delete the donation record for "${donorName}"? This will delete this specific donation entry.`,
+    "Move Donation to Trash?",
+    `Move the donation record for "${donorName}" to Trash? You can restore it from the Trash tab.`,
     async () => {
       window.showLoading();
       try {
-        await deleteDoc(doc(db, "donations", id));
+        const donationRef = doc(db, "donations", id);
+        const snapshot = await getDoc(donationRef);
+        if (!snapshot.exists()) {
+          window.showAdminAlert("Not Found", "This donation record no longer exists.", false);
+          return;
+        }
+        const donation = snapshot.data();
+        await updateDoc(donationRef, {
+          status: STATUS.TRASHED,
+          previousStatus: effectiveStatus(donation),
+          trashedAt: serverTimestamp(),
+          trashedBy: getAdminDisplayName(),
+          trashedById: loggedInAdmin?.id || "system",
+        });
         if (typeof closeDonationScreenshotModal === "function") {
           closeDonationScreenshotModal();
         }
-        window.showAdminAlert("Donation Deleted", "Specific donation record removed.", true);
+        window.showAdminAlert(
+          "Moved to Trash",
+          `The donation record for "${donorName}" can now be restored from the Trash tab.`,
+          true,
+        );
       } catch (err) {
         window.showAdminAlert("Error", err.message, false);
       } finally {
@@ -1145,12 +1382,11 @@ window.refundDonationRecord = function (id, donorName = "Donor", amt = "", metho
 window.viewDonationTrash = async function () {
   window.showLoading();
   try {
-    const s = await getDocs(
-      query(collection(db, "donations"), where("status", "==", STATUS.TRASHED)),
-    );
+    const snapshot = await getDocs(collection(db, "donations"));
     const td = [];
-    s.forEach((d) => {
-      td.push({ id: d.id, ...d.data() });
+    snapshot.forEach((document) => {
+      const donation = document.data();
+      if (isTrashedRecord(donation)) td.push({ id: document.id, ...donation });
     });
     td.sort((a, b) => {
       const dA = a.trashedAt?.toDate
@@ -1161,19 +1397,8 @@ window.viewDonationTrash = async function () {
         : new Date(b.trashedAt || 0);
       return dB - dA;
     });
-    const em = document.getElementById("donation-trash-modal");
-    if (em) em.remove();
-    const modal = document.createElement("div");
-    modal.className =
-      "fixed inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[180] overflow-hidden";
-    modal.id = "donation-trash-modal";
-    modal.addEventListener("click", function (e) {
-      if (e.target === modal) modal.remove();
-    });
     let tr = "";
-    if (td.length === 0) {
-      tr = `<tr><td colspan="7" class="px-4 py-10 text-center text-gray-400"><i class="fa-solid fa-trash-can text-4xl mb-3 block text-gray-300"></i><p class="text-lg font-bold text-gray-500">Trash is Empty</p></td></tr>`;
-    } else {
+    if (td.length > 0) {
       td.forEach((don) => {
         const id = don.id;
         const amt = don.amount
@@ -1198,11 +1423,18 @@ window.viewDonationTrash = async function () {
         else
           psb =
             '<span class="badge-warning px-2 py-0.5 rounded text-xs font-bold">Pending</span>';
-        tr += `<tr class="border-b bg-red-50/30 hover:bg-red-100/50"><td class="px-4 py-3"><div class="font-bold">${don.donorName || "Anonymous"}</div><div class="text-[10px] text-red-500"><i class="fa-solid fa-trash-can mr-1"></i>Deleted: ${tdd}</div><div class="text-[10px] text-stone-400">By: ${don.trashedBy || "Admin"}</div></td><td class="px-4 py-3 font-bold text-emerald-800">${amt}</td><td class="px-4 py-3 text-sm">${don.purpose || "N/A"}</td><td class="px-4 py-3 text-xs text-stone-500">${cd}</td><td class="px-4 py-3">${psb}</td><td class="px-4 py-3"><span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-bold"><i class="fa-solid fa-trash-can text-[10px]"></i> Trashed</span></td><td class="px-4 py-3"><div class="flex gap-1.5"><button onclick="event.stopPropagation();restoreDonation('${id}')" class="text-xs px-3 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-medium"><i class="fa-solid fa-rotate-left"></i> Restore</button><button onclick="event.stopPropagation();permanentlyDeleteDonation('${id}')" class="text-xs px-3 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-medium"><i class="fa-solid fa-trash"></i> Delete</button></div></td></tr>`;
+        tr += `<tr class="hover:bg-slate-50"><td class="px-4 py-3"><div class="font-bold">${don.donorName || "Anonymous"}</div><div class="text-[10px] text-red-500"><i class="fa-solid fa-trash-can mr-1"></i>Deleted: ${tdd}</div><div class="text-[10px] text-stone-400">By: ${don.trashedBy || "Admin"}</div></td><td class="px-4 py-3 font-bold text-emerald-800">${amt}</td><td class="px-4 py-3 text-sm">${don.purpose || "N/A"}</td><td class="px-4 py-3 text-xs text-stone-500">${cd}</td><td class="px-4 py-3">${psb}</td><td class="px-4 py-3"><span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-bold"><i class="fa-solid fa-trash-can text-[10px]"></i> Trashed</span></td><td class="px-4 py-3"><div class="flex gap-1.5"><button onclick="event.stopPropagation();restoreDonation('${id}')" class="text-xs px-3 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-medium"><i class="fa-solid fa-rotate-left"></i> Restore</button><button onclick="event.stopPropagation();permanentlyDeleteDonation('${id}')" class="text-xs px-3 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-medium"><i class="fa-solid fa-trash"></i> Delete</button></div></td></tr>`;
       });
     }
-    modal.innerHTML = `<div class="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl border border-gray-200 modal-enter flex flex-col" style="margin:auto"><div class="p-6 border-b flex items-center justify-between shrink-0 bg-white rounded-t-2xl"><div><h2 class="text-xl font-extrabold text-red-700"><i class="fa-solid fa-trash-can"></i> Trash - Deleted Donations</h2><p class="text-sm text-stone-500">${td.length || 0} donation(s) in trash</p></div><div class="flex items-center gap-3">${td.length > 0 ? `<button onclick="emptyDonationTrash()" class="text-xs px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-semibold"><i class="fa-solid fa-trash-can"></i> Empty Trash</button><button onclick="restoreAllDonations()" class="text-xs px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-semibold"><i class="fa-solid fa-rotate-left"></i> Restore All</button>` : ""}<button onclick="document.getElementById('donation-trash-modal').remove()" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button></div></div><div class="overflow-y-auto flex-1" style="min-height:0"><table class="w-full text-sm"><thead class="sticky top-0 z-10"><tr class="bg-red-50 text-xs font-semibold text-red-700 uppercase"><th class="px-4 py-3 text-left bg-red-50">Donor Name</th><th class="px-4 py-3 text-left bg-red-50">Resource</th><th class="px-4 py-3 text-left bg-red-50">Purpose</th><th class="px-4 py-3 text-left bg-red-50">Date</th><th class="px-4 py-3 text-left bg-red-50">Prev Status</th><th class="px-4 py-3 text-left bg-red-50">Status</th><th class="px-4 py-3 text-left bg-red-50">Actions</th></tr></thead><tbody class="divide-y divide-gray-100">${tr}</tbody></table></div><div class="p-4 border-t bg-gray-50 shrink-0 rounded-b-2xl"><p class="text-xs text-stone-400 text-center"><i class="fa-solid fa-info-circle mr-1"></i>Trashed donations can be restored.</p></div></div>`;
-    document.body.appendChild(modal);
+    renderAdminTrashTab(
+      "donations",
+      "donation",
+      td.length,
+      ["Donor Name", "Resource", "Purpose", "Date", "Prev Status", "Status", "Actions"],
+      tr,
+      { empty: "emptyDonationTrash()", restore: "restoreAllDonations()" },
+      "Trash is empty",
+    );
     window.hideLoading();
   } catch (err) {
     window.hideLoading();
@@ -1229,8 +1461,7 @@ window.restoreDonation = function (id) {
         trashedById: null,
         previousStatus: null,
       });
-      const m = document.getElementById("donation-trash-modal");
-      if (m) m.remove();
+      window.viewDonationTrash();
       window.showAdminAlert("Donation Restored", "Restored.", true);
     } catch (err) {
       window.hideLoading();
@@ -1248,8 +1479,7 @@ window.permanentlyDeleteDonation = function (id) {
       window.showLoading();
       try {
         await deleteDoc(doc(db, "donations", id));
-        const m = document.getElementById("donation-trash-modal");
-        if (m) m.remove();
+        window.viewDonationTrash();
         window.showAdminAlert("Donation Deleted", "Permanently deleted.", true);
       } catch (err) {
         window.hideLoading();
@@ -1267,27 +1497,20 @@ window.emptyDonationTrash = function () {
     async () => {
       window.showLoading();
       try {
-        const s = await getDocs(
-          query(
-            collection(db, "donations"),
-            where("status", "==", STATUS.TRASHED),
-          ),
+        const snapshot = await getDocs(collection(db, "donations"));
+        const trashedDonations = snapshot.docs.filter((document) =>
+          isTrashedRecord(document.data()),
         );
-        if (s.empty) {
+        if (trashedDonations.length === 0) {
           window.hideLoading();
           window.showAdminAlert("Trash Empty", "No donations.", false);
           return;
         }
         const b = writeBatch(db);
-        let c = 0;
-        s.forEach((d) => {
-          b.delete(d.ref);
-          c++;
-        });
+        trashedDonations.forEach((document) => b.delete(document.ref));
         await b.commit();
-        const m = document.getElementById("donation-trash-modal");
-        if (m) m.remove();
-        window.showAdminAlert("Trash Emptied", `${c} deleted.`, true);
+        window.viewDonationTrash();
+        window.showAdminAlert("Trash Emptied", `${trashedDonations.length} deleted.`, true);
       } catch (err) {
         window.hideLoading();
         window.showAdminAlert("Error", "Failed: " + err.message, false);
@@ -1301,22 +1524,19 @@ window.restoreAllDonations = function () {
   window.showConfirmPopup("Restore All Donations", "Restore ALL?", async () => {
     window.showLoading();
     try {
-      const s = await getDocs(
-        query(
-          collection(db, "donations"),
-          where("status", "==", STATUS.TRASHED),
-        ),
+      const snapshot = await getDocs(collection(db, "donations"));
+      const trashedDonations = snapshot.docs.filter((document) =>
+        isTrashedRecord(document.data()),
       );
-      if (s.empty) {
+      if (trashedDonations.length === 0) {
         window.hideLoading();
         window.showAdminAlert("Trash Empty", "No donations.", false);
         return;
       }
       const b = writeBatch(db);
-      let c = 0;
-      s.forEach((d) => {
-        const data = d.data();
-        b.update(d.ref, {
+      trashedDonations.forEach((document) => {
+        const data = document.data();
+        b.update(document.ref, {
           status: data.previousStatus || STATUS.PENDING,
           restoredAt: serverTimestamp(),
           restoredBy: getAdminDisplayName(),
@@ -1326,12 +1546,10 @@ window.restoreAllDonations = function () {
           trashedById: null,
           previousStatus: null,
         });
-        c++;
       });
       await b.commit();
-      const m = document.getElementById("donation-trash-modal");
-      if (m) m.remove();
-      window.showAdminAlert("All Restored", `${c} restored.`, true);
+      window.viewDonationTrash();
+      window.showAdminAlert("All Restored", `${trashedDonations.length} restored.`, true);
     } catch (err) {
       window.hideLoading();
       window.showAdminAlert("Error", "Failed: " + err.message, false);
@@ -1392,9 +1610,12 @@ function initDonationsListener() {
   const sortDropdown = document.getElementById("donation-sort-select");
   if (sortDropdown) sortDropdown.value = "date-desc";
   onSnapshot(
-    query(collection(db, "donations"), where("status", "!=", STATUS.TRASHED)),
+    collection(db, "donations"),
     (snapshot) => {
-      if (snapshot.empty) {
+      const activeDonations = snapshot.docs.filter(
+        (document) => !isTrashedRecord(document.data()),
+      );
+      if (activeDonations.length === 0) {
         tbody.innerHTML =
           '<tr><td colspan="7" class="px-4 py-6 text-center text-stone-400">No donations reported yet.</td></tr>';
         allDonations = [];
@@ -1404,8 +1625,8 @@ function initDonationsListener() {
         return;
       }
       allDonations = [];
-      snapshot.forEach((d) => {
-        allDonations.push({ id: d.id, ...d.data() });
+      activeDonations.forEach((document) => {
+        allDonations.push({ id: document.id, ...document.data() });
       });
       renderSortedDonations();
       refreshActionBadges();
@@ -1511,7 +1732,7 @@ function renderSortedDonations() {
     if (canRefund) {
       refundBtn = `<button type="button" onclick="refundDonationRecord('${escId}', '${escDonor}', '${escAmt}', '${escMethod}')" class="px-2 py-1 rounded text-xs font-bold bg-amber-100 text-amber-900 hover:bg-amber-200 transition-all inline-flex items-center gap-1 shadow-xs mr-1.5" title="Refund within 3 working days"><i class="fa-solid fa-rotate-left text-[10px]"></i><span>Refund</span></button>`;
     }
-    html += `<tr class="${isNew ? "row-new " : ""}hover:bg-blue-50/60 cursor-pointer border-b table-row donation-row transition-colors" data-status="${effStatus}" onclick="openDonationScreenshotModal('${id}')"><td class="px-5 py-4 font-bold">${d.donorName || "Anonymous"}${isNew ? " " + newChipHtml() : ""}</td><td class="px-5 py-4 font-bold text-emerald-800">${amt}</td><td class="px-5 py-4" onclick="event.stopPropagation(); openDonationScreenshotModal('${id}');">${proofCell}</td><td class="px-5 py-4 text-sm">${d.purpose || "N/A"}</td><td class="px-5 py-4 text-xs text-stone-500">${cd}</td><td class="px-5 py-4">${sb}</td><td class="px-4 py-4 text-right" onclick="event.stopPropagation()">${refundBtn}<button type="button" onclick="deleteDonationRecord('${escId}', '${escDonor}')" class="w-8 h-8 rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all inline-flex items-center justify-center" title="Delete specific donation record"><i class="fa-solid fa-trash-can text-xs"></i></button></td></tr>`;
+    html += `<tr class="${isNew ? "row-new " : ""}hover:bg-blue-50/60 cursor-pointer border-b table-row donation-row transition-colors" data-status="${effStatus}" onclick="openDonationScreenshotModal('${id}')"><td class="px-5 py-4 font-bold">${d.donorName || "Anonymous"}${isNew ? " " + newChipHtml() : ""}</td><td class="px-5 py-4 font-bold text-emerald-800">${amt}</td><td class="px-5 py-4" onclick="event.stopPropagation(); openDonationScreenshotModal('${id}');">${proofCell}</td><td class="px-5 py-4 text-sm">${d.purpose || "N/A"}</td><td class="px-5 py-4 text-xs text-stone-500">${cd}</td><td class="px-5 py-4">${sb}</td><td class="px-4 py-4 text-right" onclick="event.stopPropagation()">${refundBtn}<button type="button" onclick="deleteDonationRecord('${escId}', '${escDonor}')" class="w-8 h-8 rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all inline-flex items-center justify-center" title="Move donation to trash" aria-label="Move donation to trash"><i class="fa-solid fa-trash-can text-xs"></i></button></td></tr>`;
   });
   tbody.innerHTML = html;
   window.filterDonations();
@@ -1544,16 +1765,26 @@ window.filterVolunteers = function (filter) {
 
 window.deleteVolunteerRecord = function (id, name = "Volunteer") {
   window.showConfirmPopup(
-    "Delete Volunteer Application?",
-    `Are you sure you want to delete the application record for "${name}"? This will delete this specific entry.`,
+    "Move Volunteer Application to Trash?",
+    `Move the application record for "${name}" to Trash? You can restore it later.`,
     async () => {
       window.showLoading();
       try {
-        await deleteDoc(doc(db, "volunteers", id));
+        const ref = doc(db, "volunteers", id);
+        const snapshot = await getDoc(ref);
+        if (!snapshot.exists()) throw new Error("Volunteer record not found.");
+        const record = snapshot.data();
+        await updateDoc(ref, {
+          status: STATUS.TRASHED,
+          previousStatus: record.status || STATUS.PENDING,
+          trashedAt: serverTimestamp(),
+          trashedBy: getAdminDisplayName(),
+          trashedById: loggedInAdmin?.id || "system",
+        });
         if (typeof window.closeVolunteerDetailsModal === "function") {
           window.closeVolunteerDetailsModal();
         }
-        window.showAdminAlert("Application Deleted", "Volunteer record removed.", true);
+        window.showAdminAlert("Moved to Trash", "Volunteer record moved to Trash.", true);
       } catch (err) {
         window.showAdminAlert("Error", err.message, false);
       } finally {
@@ -1656,19 +1887,8 @@ window.viewVolunteerTrash = async function () {
         : new Date(b.trashedAt || 0);
       return dB - dA;
     });
-    const em = document.getElementById("volunteer-trash-modal");
-    if (em) em.remove();
-    const modal = document.createElement("div");
-    modal.className =
-      "fixed inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[180] overflow-hidden";
-    modal.id = "volunteer-trash-modal";
-    modal.addEventListener("click", function (e) {
-      if (e.target === modal) modal.remove();
-    });
     let tr = "";
-    if (tv.length === 0) {
-      tr = `<tr><td colspan="7" class="px-4 py-10 text-center text-gray-400"><i class="fa-solid fa-trash-can text-4xl mb-3 block text-gray-300"></i><p class="text-lg font-bold text-gray-500">Trash is Empty</p></td></tr>`;
-    } else {
+    if (tv.length > 0) {
       tv.forEach((v) => {
         const id = v.id;
         let psb = "";
@@ -1683,11 +1903,18 @@ window.viewVolunteerTrash = async function () {
             '<span class="badge-warning px-2 py-0.5 rounded text-xs font-bold">Pending</span>';
         const tdd = v.trashedAt ? formatFirebaseTimestamp(v.trashedAt) : "N/A";
         const cd = v.createdAt ? formatFirebaseTimestamp(v.createdAt) : "N/A";
-        tr += `<tr class="border-b bg-red-50/30 hover:bg-red-100/50"><td class="px-4 py-3"><div class="font-bold">${v.name || "N/A"}</div><div class="text-[10px] text-red-500"><i class="fa-solid fa-trash-can mr-1"></i>Deleted: ${tdd}</div><div class="text-[10px] text-stone-400">By: ${v.trashedBy || "Admin"}</div></td><td class="px-4 py-3 text-sm">${v.email || "N/A"}<br>${v.phone || "N/A"}</td><td class="px-4 py-3 text-sm">${v.skills || "N/A"}</td><td class="px-4 py-3 text-sm">${v.availability || "N/A"}</td><td class="px-4 py-3 text-xs">${cd}</td><td class="px-4 py-3">${psb}</td><td class="px-4 py-3"><div class="flex gap-1.5"><button onclick="event.stopPropagation();restoreVolunteer('${id}')" class="text-xs px-3 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-medium"><i class="fa-solid fa-rotate-left"></i> Restore</button><button onclick="event.stopPropagation();permanentlyDeleteVolunteer('${id}')" class="text-xs px-3 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-medium"><i class="fa-solid fa-trash"></i> Delete</button></div></td></tr>`;
+        tr += `<tr class="hover:bg-slate-50"><td class="px-4 py-3"><div class="font-bold">${v.name || "N/A"}</div><div class="text-[10px] text-red-500"><i class="fa-solid fa-trash-can mr-1"></i>Deleted: ${tdd}</div><div class="text-[10px] text-stone-400">By: ${v.trashedBy || "Admin"}</div></td><td class="px-4 py-3 text-sm">${v.email || "N/A"}<br>${v.phone || "N/A"}</td><td class="px-4 py-3 text-sm">${v.skills || "N/A"}</td><td class="px-4 py-3 text-sm">${v.availability || "N/A"}</td><td class="px-4 py-3 text-xs">${cd}</td><td class="px-4 py-3">${psb}</td><td class="px-4 py-3"><div class="flex gap-1.5"><button onclick="event.stopPropagation();restoreVolunteer('${id}')" class="text-xs px-3 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-medium"><i class="fa-solid fa-rotate-left"></i> Restore</button><button onclick="event.stopPropagation();permanentlyDeleteVolunteer('${id}')" class="text-xs px-3 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-medium"><i class="fa-solid fa-trash"></i> Delete</button></div></td></tr>`;
       });
     }
-    modal.innerHTML = `<div class="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl border border-gray-200 modal-enter flex flex-col" style="margin:auto"><div class="p-6 border-b flex items-center justify-between shrink-0 bg-white rounded-t-2xl"><div><h2 class="text-xl font-extrabold text-red-700"><i class="fa-solid fa-trash-can"></i> Trash - Deleted Volunteers</h2><p class="text-sm text-stone-500">${tv.length || 0} volunteer(s) in trash</p></div><div class="flex items-center gap-3">${tv.length > 0 ? `<button onclick="emptyVolunteerTrash()" class="text-xs px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-semibold"><i class="fa-solid fa-trash-can"></i> Empty Trash</button><button onclick="restoreAllVolunteers()" class="text-xs px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-semibold"><i class="fa-solid fa-rotate-left"></i> Restore All</button>` : ""}<button onclick="document.getElementById('volunteer-trash-modal').remove()" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button></div></div><div class="overflow-y-auto flex-1" style="min-height:0"><table class="w-full text-sm"><thead class="sticky top-0 z-10"><tr class="bg-red-50 text-xs font-semibold text-red-700 uppercase"><th class="px-4 py-3 text-left bg-red-50">Name</th><th class="px-4 py-3 text-left bg-red-50">Contact</th><th class="px-4 py-3 text-left bg-red-50">Skills</th><th class="px-4 py-3 text-left bg-red-50">Availability</th><th class="px-4 py-3 text-left bg-red-50">Date</th><th class="px-4 py-3 text-left bg-red-50">Prev Status</th><th class="px-4 py-3 text-left bg-red-50">Actions</th></tr></thead><tbody class="divide-y divide-gray-100">${tr}</tbody></table></div><div class="p-4 border-t bg-gray-50 shrink-0 rounded-b-2xl"><p class="text-xs text-stone-400 text-center"><i class="fa-solid fa-info-circle mr-1"></i>Trashed volunteers can be restored.</p></div></div>`;
-    document.body.appendChild(modal);
+    renderAdminTrashTab(
+      "volunteers",
+      "volunteer",
+      tv.length,
+      ["Name", "Contact", "Skills", "Availability", "Date", "Prev Status", "Actions"],
+      tr,
+      { empty: "emptyVolunteerTrash()", restore: "restoreAllVolunteers()" },
+      "Trash is empty",
+    );
     window.hideLoading();
   } catch (err) {
     window.hideLoading();
@@ -1714,8 +1941,7 @@ window.restoreVolunteer = function (id) {
         trashedById: null,
         previousStatus: null,
       });
-      const m = document.getElementById("volunteer-trash-modal");
-      if (m) m.remove();
+      window.viewVolunteerTrash();
       window.showAdminAlert("Volunteer Restored", "Restored.", true);
     } catch (err) {
       window.hideLoading();
@@ -1733,8 +1959,7 @@ window.permanentlyDeleteVolunteer = function (id) {
       window.showLoading();
       try {
         await deleteDoc(doc(db, "volunteers", id));
-        const m = document.getElementById("volunteer-trash-modal");
-        if (m) m.remove();
+        window.viewVolunteerTrash();
         window.showAdminAlert(
           "Volunteer Deleted",
           "Permanently deleted.",
@@ -1774,8 +1999,7 @@ window.emptyVolunteerTrash = function () {
           c++;
         });
         await b.commit();
-        const m = document.getElementById("volunteer-trash-modal");
-        if (m) m.remove();
+        window.viewVolunteerTrash();
         window.showAdminAlert("Trash Emptied", `${c} deleted.`, true);
       } catch (err) {
         window.hideLoading();
@@ -1821,8 +2045,7 @@ window.restoreAllVolunteers = function () {
           c++;
         });
         await b.commit();
-        const m = document.getElementById("volunteer-trash-modal");
-        if (m) m.remove();
+        window.viewVolunteerTrash();
         window.showAdminAlert("All Restored", `${c} restored.`, true);
       } catch (err) {
         window.hideLoading();
@@ -2166,293 +2389,293 @@ window.viewVerificationFile = async function (id) {
 };
 
 // ==================== ANTI-DEBUGGING & DEVELOPER TOOLS PROTECTION ====================
-(function () {
-  // Disable right-click context menu
-  document.addEventListener("contextmenu", function (e) {
-    e.preventDefault();
-    return false;
-  });
+// (function () {
+//   // Disable right-click context menu
+//   document.addEventListener("contextmenu", function (e) {
+//     e.preventDefault();
+//     return false;
+//   });
 
-  // Disable keyboard shortcuts for developer tools
-  document.addEventListener("keydown", function (e) {
-    // F12 key
-    if (e.keyCode === 123) {
-      e.preventDefault();
-      return false;
-    }
+//   // Disable keyboard shortcuts for developer tools
+//   document.addEventListener("keydown", function (e) {
+//     // F12 key
+//     if (e.keyCode === 123) {
+//       e.preventDefault();
+//       return false;
+//     }
 
-    // Ctrl+Shift+I (Chrome, Firefox Dev Tools)
-    if (e.ctrlKey && e.shiftKey && e.keyCode === 73) {
-      e.preventDefault();
-      return false;
-    }
+//     // Ctrl+Shift+I (Chrome, Firefox Dev Tools)
+//     if (e.ctrlKey && e.shiftKey && e.keyCode === 73) {
+//       e.preventDefault();
+//       return false;
+//     }
 
-    // Ctrl+Shift+J (Chrome Console)
-    if (e.ctrlKey && e.shiftKey && e.keyCode === 74) {
-      e.preventDefault();
-      return false;
-    }
+//     // Ctrl+Shift+J (Chrome Console)
+//     if (e.ctrlKey && e.shiftKey && e.keyCode === 74) {
+//       e.preventDefault();
+//       return false;
+//     }
 
-    // Ctrl+Shift+C (Chrome Element Selector)
-    if (e.ctrlKey && e.shiftKey && e.keyCode === 67) {
-      e.preventDefault();
-      return false;
-    }
+//     // Ctrl+Shift+C (Chrome Element Selector)
+//     if (e.ctrlKey && e.shiftKey && e.keyCode === 67) {
+//       e.preventDefault();
+//       return false;
+//     }
 
-    // Ctrl+U (View Source)
-    if (e.ctrlKey && e.keyCode === 85) {
-      e.preventDefault();
-      return false;
-    }
+//     // Ctrl+U (View Source)
+//     if (e.ctrlKey && e.keyCode === 85) {
+//       e.preventDefault();
+//       return false;
+//     }
 
-    // Ctrl+S (Save Page)
-    if (e.ctrlKey && e.keyCode === 83) {
-      e.preventDefault();
-      return false;
-    }
+//     // Ctrl+S (Save Page)
+//     if (e.ctrlKey && e.keyCode === 83) {
+//       e.preventDefault();
+//       return false;
+//     }
 
-    // Ctrl+Shift+K (Firefox Console)
-    if (e.ctrlKey && e.shiftKey && e.keyCode === 75) {
-      e.preventDefault();
-      return false;
-    }
+//     // Ctrl+Shift+K (Firefox Console)
+//     if (e.ctrlKey && e.shiftKey && e.keyCode === 75) {
+//       e.preventDefault();
+//       return false;
+//     }
 
-    // Ctrl+Shift+E (Firefox Network Tab)
-    if (e.ctrlKey && e.shiftKey && e.keyCode === 69) {
-      e.preventDefault();
-      return false;
-    }
+//     // Ctrl+Shift+E (Firefox Network Tab)
+//     if (e.ctrlKey && e.shiftKey && e.keyCode === 69) {
+//       e.preventDefault();
+//       return false;
+//     }
 
-    // F5 and Ctrl+R (Refresh - optional, might want to allow refresh)
-    // if (e.keyCode === 116 || (e.ctrlKey && e.keyCode === 82)) {
-    //     e.preventDefault();
-    //     return false;
-    // }
-  });
+//     // F5 and Ctrl+R (Refresh - optional, might want to allow refresh)
+//     // if (e.keyCode === 116 || (e.ctrlKey && e.keyCode === 82)) {
+//     //     e.preventDefault();
+//     //     return false;
+//     // }
+//   });
 
-  // Detect if Developer Tools is open using various methods
-  function detectDevTools() {
-    const threshold = 160;
-    const widthThreshold = window.outerWidth - window.innerWidth > threshold;
-    const heightThreshold = window.outerHeight - window.innerHeight > threshold;
+//   // Detect if Developer Tools is open using various methods
+//   function detectDevTools() {
+//     const threshold = 160;
+//     const widthThreshold = window.outerWidth - window.innerWidth > threshold;
+//     const heightThreshold = window.outerHeight - window.innerHeight > threshold;
 
-    // Method 1: Window size difference detection
-    if (widthThreshold || heightThreshold) {
-      handleDevToolsDetected();
-    }
+//     // Method 1: Window size difference detection
+//     if (widthThreshold || heightThreshold) {
+//       handleDevToolsDetected();
+//     }
 
-    // Method 2: Console.log timing detection
-    const startTime = performance.now();
-    debugger;
-    const endTime = performance.now();
+//     // Method 2: Console.log timing detection
+//     const startTime = performance.now();
+//     debugger;
+//     const endTime = performance.now();
 
-    if (endTime - startTime > 100) {
-      handleDevToolsDetected();
-    }
+//     if (endTime - startTime > 100) {
+//       handleDevToolsDetected();
+//     }
 
-    // Method 3: Firefox specific detection
-    if (window.devtools && window.devtools.open) {
-      handleDevToolsDetected();
-    }
-  }
+//     // Method 3: Firefox specific detection
+//     if (window.devtools && window.devtools.open) {
+//       handleDevToolsDetected();
+//     }
+//   }
 
-  // Method 4: Using requestAnimationFrame to detect console
-  let devtoolsOpen = false;
-  const element = new Image();
-  Object.defineProperty(element, "id", {
-    get: function () {
-      devtoolsOpen = true;
-      handleDevToolsDetected();
-    },
-  });
+//   // Method 4: Using requestAnimationFrame to detect console
+//   let devtoolsOpen = false;
+//   const element = new Image();
+//   Object.defineProperty(element, "id", {
+//     get: function () {
+//       devtoolsOpen = true;
+//       handleDevToolsDetected();
+//     },
+//   });
 
-  setInterval(function () {
-    devtoolsOpen = false;
-    console.log("%c", element);
-    if (devtoolsOpen) {
-      handleDevToolsDetected();
-    }
-  }, 1000);
+//   setInterval(function () {
+//     devtoolsOpen = false;
+//     console.log("%c", element);
+//     if (devtoolsOpen) {
+//       handleDevToolsDetected();
+//     }
+//   }, 1000);
 
-  // Method 5: Detect Firebug
-  if (window.console && (window.console.firebug || window.console.exception)) {
-    handleDevToolsDetected();
-  }
+//   // Method 5: Detect Firebug
+//   if (window.console && (window.console.firebug || window.console.exception)) {
+//     handleDevToolsDetected();
+//   }
 
-  function handleDevToolsDetected() {
-    // Clear console
-    console.clear();
+//   function handleDevToolsDetected() {
+//     // Clear console
+//     console.clear();
 
-    // Show warning
-    console.log(
-      "%c⚠️ WARNING ⚠️",
-      "color: red; font-size: 30px; font-weight: bold;",
-    );
-    console.log(
-      "%cDeveloper tools detected!",
-      "color: orange; font-size: 20px;",
-    );
-    console.log(
-      "%cThis action has been logged and reported to the administrator.",
-      "color: red; font-size: 14px;",
-    );
-    console.log(
-      "%cPlease close developer tools immediately.",
-      "color: orange; font-size: 14px;",
-    );
+//     // Show warning
+//     console.log(
+//       "%c⚠️ WARNING ⚠️",
+//       "color: red; font-size: 30px; font-weight: bold;",
+//     );
+//     console.log(
+//       "%cDeveloper tools detected!",
+//       "color: orange; font-size: 20px;",
+//     );
+//     console.log(
+//       "%cThis action has been logged and reported to the administrator.",
+//       "color: red; font-size: 14px;",
+//     );
+//     console.log(
+//       "%cPlease close developer tools immediately.",
+//       "color: orange; font-size: 14px;",
+//     );
 
-    // Optional: Log the attempt
-    if (typeof loggedInAdmin !== "undefined" && loggedInAdmin) {
-      try {
-        // You can add Firestore logging here if needed
-        // addDoc(collection(db, 'security_logs'), { ... });
-      } catch (e) { }
-    }
+//     // Optional: Log the attempt
+//     if (typeof loggedInAdmin !== "undefined" && loggedInAdmin) {
+//       try {
+//         // You can add Firestore logging here if needed
+//         // addDoc(collection(db, 'security_logs'), { ... });
+//       } catch (e) { }
+//     }
 
-    // Optional: Show modal warning
-    showDevToolsWarning();
-  }
+//     // Optional: Show modal warning
+//     showDevToolsWarning();
+//   }
 
-  function showDevToolsWarning() {
-    // Remove existing warning if any
-    const existing = document.getElementById("devtools-warning");
-    if (existing) existing.remove();
+//   function showDevToolsWarning() {
+//     // Remove existing warning if any
+//     const existing = document.getElementById("devtools-warning");
+//     if (existing) existing.remove();
 
-    const warningModal = document.createElement("div");
-    warningModal.id = "devtools-warning";
-    warningModal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.9);
-            z-index: 999999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        `;
+//     const warningModal = document.createElement("div");
+//     warningModal.id = "devtools-warning";
+//     warningModal.style.cssText = `
+//             position: fixed;
+//             top: 0;
+//             left: 0;
+//             right: 0;
+//             bottom: 0;
+//             background: rgba(0, 0, 0, 0.9);
+//             z-index: 999999;
+//             display: flex;
+//             align-items: center;
+//             justify-content: center;
+//             padding: 20px;
+//         `;
 
-    warningModal.innerHTML = `
-            <div style="
-                background: white;
-                border-radius: 20px;
-                padding: 40px;
-                max-width: 500px;
-                width: 100%;
-                text-align: center;
-                box-shadow: 0 25px 50px rgba(0,0,0,0.5);
-                animation: fadeInUp 0.3s ease-out;
-            ">
-                <div style="
-                    width: 80px;
-                    height: 80px;
-                    background: #fee2e2;
-                    color: #dc2626;
-                    border-radius: 50%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin: 0 auto 20px;
-                    font-size: 40px;
-                ">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
-                </div>
-                <h2 style="
-                    color: #1f2937;
-                    font-size: 24px;
-                    font-weight: 800;
-                    margin-bottom: 10px;
-                ">⚠️ Security Warning</h2>
-                <p style="
-                    color: #6b7280;
-                    font-size: 14px;
-                    margin-bottom: 10px;
-                    line-height: 1.6;
-                ">
-                    Developer tools have been detected on this page.
-                </p>
-                <p style="
-                    color: #dc2626;
-                    font-size: 13px;
-                    font-weight: 600;
-                    margin-bottom: 20px;
-                    background: #fee2e2;
-                    padding: 12px;
-                    border-radius: 10px;
-                ">
-                    Using developer tools is strictly prohibited. This action has been logged.
-                </p>
-                <button onclick="document.getElementById('devtools-warning').remove()" style="
-                    background: #2563eb;
-                    color: white;
-                    border: none;
-                    padding: 12px 30px;
-                    border-radius: 10px;
-                    font-size: 14px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: all 0.3s;
-                " onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">
-                    <i class="fa-solid fa-check mr-2"></i>I Understand
-                </button>
-            </div>
-        `;
+//     warningModal.innerHTML = `
+//             <div style="
+//                 background: white;
+//                 border-radius: 20px;
+//                 padding: 40px;
+//                 max-width: 500px;
+//                 width: 100%;
+//                 text-align: center;
+//                 box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+//                 animation: fadeInUp 0.3s ease-out;
+//             ">
+//                 <div style="
+//                     width: 80px;
+//                     height: 80px;
+//                     background: #fee2e2;
+//                     color: #dc2626;
+//                     border-radius: 50%;
+//                     display: flex;
+//                     align-items: center;
+//                     justify-content: center;
+//                     margin: 0 auto 20px;
+//                     font-size: 40px;
+//                 ">
+//                     <i class="fa-solid fa-triangle-exclamation"></i>
+//                 </div>
+//                 <h2 style="
+//                     color: #1f2937;
+//                     font-size: 24px;
+//                     font-weight: 800;
+//                     margin-bottom: 10px;
+//                 ">⚠️ Security Warning</h2>
+//                 <p style="
+//                     color: #6b7280;
+//                     font-size: 14px;
+//                     margin-bottom: 10px;
+//                     line-height: 1.6;
+//                 ">
+//                     Developer tools have been detected on this page.
+//                 </p>
+//                 <p style="
+//                     color: #dc2626;
+//                     font-size: 13px;
+//                     font-weight: 600;
+//                     margin-bottom: 20px;
+//                     background: #fee2e2;
+//                     padding: 12px;
+//                     border-radius: 10px;
+//                 ">
+//                     Using developer tools is strictly prohibited. This action has been logged.
+//                 </p>
+//                 <button onclick="document.getElementById('devtools-warning').remove()" style="
+//                     background: #2563eb;
+//                     color: white;
+//                     border: none;
+//                     padding: 12px 30px;
+//                     border-radius: 10px;
+//                     font-size: 14px;
+//                     font-weight: 600;
+//                     cursor: pointer;
+//                     transition: all 0.3s;
+//                 " onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">
+//                     <i class="fa-solid fa-check mr-2"></i>I Understand
+//                 </button>
+//             </div>
+//         `;
 
-    document.body.appendChild(warningModal);
-  }
+//     document.body.appendChild(warningModal);
+//   }
 
-  // Run detection periodically
-  setInterval(detectDevTools, 2000);
+//   // Run detection periodically
+//   setInterval(detectDevTools, 2000);
 
-  // Prevent dragging of images and links
-  document.addEventListener("dragstart", function (e) {
-    if (e.target.tagName === "IMG" || e.target.tagName === "A") {
-      e.preventDefault();
-      return false;
-    }
-  });
+//   // Prevent dragging of images and links
+//   document.addEventListener("dragstart", function (e) {
+//     if (e.target.tagName === "IMG" || e.target.tagName === "A") {
+//       e.preventDefault();
+//       return false;
+//     }
+//   });
 
-  // Prevent text selection (optional - might affect usability)
-  // document.addEventListener('selectstart', function(e) {
-  //     e.preventDefault();
-  //     return false;
-  // });
+//   // Prevent text selection (optional - might affect usability)
+//   // document.addEventListener('selectstart', function(e) {
+//   //     e.preventDefault();
+//   //     return false;
+//   // });
 
-  // // Disable copy/paste (optional)
-  // document.addEventListener('copy', function(e) {
-  //     e.preventDefault();
-  //     return false;
-  // });
-  // document.addEventListener('cut', function(e) {
-  //     e.preventDefault();
-  //     return false;
-  // });
+//   // // Disable copy/paste (optional)
+//   // document.addEventListener('copy', function(e) {
+//   //     e.preventDefault();
+//   //     return false;
+//   // });
+//   // document.addEventListener('cut', function(e) {
+//   //     e.preventDefault();
+//   //     return false;
+//   // });
 
-  // Override console methods to prevent logging
-  const noop = function () { };
-  const methods = [
-    "log",
-    "debug",
-    "warn",
-    "info",
-    "error",
-    "exception",
-    "table",
-    "trace",
-  ];
+//   // Override console methods to prevent logging
+//   const noop = function () { };
+//   const methods = [
+//     "log",
+//     "debug",
+//     "warn",
+//     "info",
+//     "error",
+//     "exception",
+//     "table",
+//     "trace",
+//   ];
 
-  // Uncomment to completely disable console
-  // methods.forEach(function(method) {
-  //     console[method] = noop;
-  // });
+//   // Uncomment to completely disable console
+//   // methods.forEach(function(method) {
+//   //     console[method] = noop;
+//   // });
 
-  console.log(
-    "%c🔒 Admin Panel Security Active",
-    "color: green; font-size: 14px; font-weight: bold;",
-  );
-})();
+//   console.log(
+//     "%c🔒 Admin Panel Security Active",
+//     "color: green; font-size: 14px; font-weight: bold;",
+//   );
+// })();
 
 // ===== VIEW VERIFICATION FILE (UPDATED WITH DOWNLOAD IN MODAL) =====
 window.viewVerificationFile = async function (id) {
@@ -2916,6 +3139,144 @@ async function handleLogin(e) {
     window.hideLoading();
   }
 }
+function isEmailJsConfigured() {
+  return Boolean(
+    emailJsConfig.publicKey &&
+      emailJsConfig.serviceId &&
+      emailJsConfig.templateId,
+  );
+}
+
+async function dispatchPostEmails(collectionName, postId, post, postType) {
+  const postRef = doc(db, collectionName, postId);
+  try {
+    await updateDoc(postRef, {
+      emailDelivery: {
+        status: "sending",
+        startedAt: serverTimestamp(),
+      },
+    });
+
+    const residentSnapshot = await getDocs(collection(db, "residents"));
+    const recipients = new Set();
+    residentSnapshot.forEach((residentDoc) => {
+      const resident = residentDoc.data();
+      const accountStatus = String(resident.accountStatus || "").toLowerCase();
+      if (
+        resident.isDisabled === true ||
+        resident.isDeleted === true ||
+        accountStatus === "disabled" ||
+        accountStatus === "deleted"
+      ) {
+        return;
+      }
+
+      const email = String(resident.email || "").trim().toLowerCase();
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        recipients.add(email);
+      }
+    });
+
+    const recipientEmails = [...recipients];
+    if (recipientEmails.length === 0) {
+      await updateDoc(postRef, {
+        emailDelivery: {
+          status: "no_recipients",
+          recipientCount: 0,
+          completedAt: serverTimestamp(),
+        },
+      });
+      return;
+    }
+
+    let sentCount = 0;
+    let failedCount = 0;
+    const deliveryErrors = [];
+    for (let i = 0; i < recipientEmails.length; i++) {
+      if (i > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 1050));
+      }
+      try {
+        const response = await fetch(
+          "https://api.emailjs.com/api/v1.0/email/send",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              service_id: emailJsConfig.serviceId,
+              template_id: emailJsConfig.templateId,
+              user_id: emailJsConfig.publicKey,
+              template_params: {
+                to_email: recipientEmails[i],
+                title: post.title,
+                content_type: postType,
+                priority: post.priority || "",
+                description: post.desc,
+                event_date: post.date || "",
+                event_time: post.time || "",
+                location: post.location || "",
+                category: post.type || "",
+                image_url: post.imageUrl || "",
+              },
+            }),
+          },
+        );
+        const responseBody = await response.text();
+        if (!response.ok) {
+          failedCount++;
+          const detail =
+            responseBody.trim() || `HTTP ${response.status} with no response body.`;
+          deliveryErrors.push(`HTTP ${response.status}: ${detail.slice(0, 500)}`);
+          console.error(
+            `EmailJS rejected a ${postType.toLowerCase()} email: HTTP ${response.status}.`,
+            detail,
+          );
+        } else {
+          sentCount++;
+        }
+      } catch (err) {
+        failedCount++;
+        deliveryErrors.push(
+          err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+        );
+        console.error(`${postType} email request failed:`, err);
+      }
+    }
+
+    await updateDoc(postRef, {
+      emailDelivery: {
+        status: failedCount === 0 ? "sent" : sentCount > 0 ? "partial" : "failed",
+        recipientCount: recipientEmails.length,
+        sentCount,
+        failedCount,
+        errors: deliveryErrors.slice(0, 5),
+        completedAt: serverTimestamp(),
+      },
+    });
+  } catch (err) {
+    console.error(`${postType} email delivery could not complete:`, err);
+    await updateDoc(postRef, {
+      emailDelivery: {
+        status: "failed",
+        error: err instanceof Error ? err.message : String(err),
+        completedAt: serverTimestamp(),
+      },
+    }).catch((statusError) => {
+      console.error("Could not save email delivery failure status:", statusError);
+    });
+  }
+}
+
+async function markEmailNotConfigured(postRef, postType) {
+  await updateDoc(postRef, {
+    emailDelivery: {
+      status: "not_configured",
+      postType,
+      updatedAt: serverTimestamp(),
+    },
+  });
+}
+
 async function handleAnnouncementSubmit(e) {
   e.preventDefault();
   window.showLoading();
@@ -2948,7 +3309,7 @@ async function handleAnnouncementSubmit(e) {
     } else if (document.getElementById("ann-image")?.value.trim()) {
       imageUrl = document.getElementById("ann-image").value.trim();
     }
-    await addDoc(collection(db, "announcements"), {
+    const announcement = {
       title: t.value.trim(),
       priority: p.value,
       desc: d.value.trim(),
@@ -2956,19 +3317,42 @@ async function handleAnnouncementSubmit(e) {
       createdBy: getAdminDisplayName(),
       createdById: loggedInAdmin?.id || "system",
       createdAt: serverTimestamp(),
-    });
+    };
+    const announcementRef = await addDoc(
+      collection(db, "announcements"),
+      announcement,
+    );
+    if (isEmailJsConfigured()) {
+      void dispatchPostEmails(
+        "announcements",
+        announcementRef.id,
+        announcement,
+        "Announcement",
+      );
+    } else {
+      void markEmailNotConfigured(announcementRef, "Announcement").catch((err) => {
+        console.error("Could not save email configuration status:", err);
+      });
+    }
     window.toggleModal("announcement-modal");
     document.getElementById("announcement-form").reset();
     if (document.getElementById("ann-image-file-label")) {
       document.getElementById("ann-image-file-label").textContent =
         "Original retained when possible · high-quality optimization · 8 MB max";
     }
-    window.showAdminAlert("Success", "Posted!", true);
+    window.showAdminAlert(
+      "Announcement Posted",
+      isEmailJsConfigured()
+        ? "The announcement was posted. Email delivery is starting; keep this page open until it finishes."
+        : "The announcement was posted, but email delivery is not configured yet. Follow EMAIL_SETUP.md to connect the free EmailJS service.",
+      true,
+    );
   } catch (err) {
     window.showAdminAlert("Error", err.message, false);
   } finally {
     window.hideLoading();
   }
+
 }
 async function handleEventSubmit(e) {
   e.preventDefault();
@@ -3023,14 +3407,27 @@ async function handleEventSubmit(e) {
       createdAt: serverTimestamp(),
     };
     if (etm?.value?.trim()) edata.time = etm.value.trim();
-    await addDoc(collection(db, "events"), edata);
+    const eventRef = await addDoc(collection(db, "events"), edata);
+    if (isEmailJsConfigured()) {
+      void dispatchPostEmails("events", eventRef.id, edata, "Event");
+    } else {
+      void markEmailNotConfigured(eventRef, "Event").catch((err) => {
+        console.error("Could not save email configuration status:", err);
+      });
+    }
     window.toggleModal("event-modal");
     document.getElementById("event-form").reset();
     if (document.getElementById("event-image-file-label")) {
       document.getElementById("event-image-file-label").textContent =
         "Original retained when possible · high-quality optimization · 8 MB max";
     }
-    window.showAdminAlert("Success", "Event created!", true);
+    window.showAdminAlert(
+      "Success",
+      isEmailJsConfigured()
+        ? "Event created. Email delivery is starting; keep this page open until it finishes."
+        : "Event created, but email delivery is not configured yet. Follow EMAIL_SETUP.md to connect EmailJS.",
+      true,
+    );
   } catch (err) {
     window.showAdminAlert("Error", err.message, false);
   } finally {
@@ -4157,13 +4554,23 @@ window.downloadAttachment = async function (id, idx) {
 };
 window.deleteContactMessage = function (id, name) {
   window.showConfirmPopup(
-    "Delete Message?",
-    `Delete from "${name}"?`,
+    "Move Message to Trash?",
+    `Move the message from "${name}" to Trash?`,
     async () => {
       window.showLoading();
       try {
-        await deleteDoc(doc(db, "contact_messages", id));
-        window.showAdminAlert("Success", "Deleted.", true);
+        const ref = doc(db, "contact_messages", id);
+        const snapshot = await getDoc(ref);
+        if (!snapshot.exists()) throw new Error("Feedback message not found.");
+        const record = snapshot.data();
+        await updateDoc(ref, {
+          status: STATUS.TRASHED,
+          previousStatus: record.status || "New",
+          trashedAt: serverTimestamp(),
+          trashedBy: getAdminDisplayName(),
+          trashedById: loggedInAdmin?.id || "system",
+        });
+        window.showAdminAlert("Moved to Trash", "Feedback message moved to Trash.", true);
       } catch (err) {
         window.showAdminAlert("Error", err.message, false);
       } finally {
@@ -4191,6 +4598,7 @@ function initContactMessagesListener() {
       allContactMessages = [];
       snap.forEach((d) => {
         const m = d.data();
+        if (m.status === STATUS.TRASHED) return;
         allContactMessages.push({ id: d.id, ...m });
         t++;
         if (m.status === "Pending") p++;
@@ -4203,7 +4611,7 @@ function initContactMessagesListener() {
       if (ipc) ipc.textContent = ip;
       if (rc) rc.textContent = r + c;
       refreshActionBadges();
-      if (snap.empty) {
+      if (allContactMessages.length === 0) {
         tbody.innerHTML = "";
         if (es) es.classList.remove("hidden");
         return;
@@ -4213,6 +4621,7 @@ function initContactMessagesListener() {
       snap.forEach((d) => {
         const m = d.data(),
           id = d.id;
+        if (m.status === STATUS.TRASHED) return;
         let sb = "";
         if (m.status === "Resolved")
           sb =
@@ -4301,13 +4710,16 @@ onSnapshot(
   (snap) => {
     const c = document.getElementById("announcements-container");
     if (!c) return;
-    if (snap.empty) {
+    const activeAnnouncements = snap.docs.filter(
+      (document) => document.data().status !== STATUS.TRASHED,
+    );
+    if (activeAnnouncements.length === 0) {
       c.innerHTML =
         '<div class="col-span-full text-center py-10 text-stone-400 bg-white border rounded-xl">No announcements yet.</div>';
       return;
     }
     let h = "";
-    snap.forEach((d) => {
+    activeAnnouncements.forEach((d) => {
       const a = d.data(),
         id = d.id;
       const priority = a.priority || "Notice";
@@ -4362,17 +4774,22 @@ let allEvents = [];
 onSnapshot(query(collection(db, "events"), orderBy("date", "asc")), (snap) => {
   const g = document.getElementById("events-grid");
   if (!g) return;
-  allEvents = [];
-  if (snap.empty) {
+  const activeEvents = snap.docs.filter(
+    (document) => document.data().status !== STATUS.TRASHED,
+  );
+  allEvents = activeEvents.map((document) => ({
+    id: document.id,
+    ...document.data(),
+  }));
+  if (activeEvents.length === 0) {
     g.innerHTML =
       '<div class="col-span-full text-center py-10 text-stone-400 bg-white border rounded-xl">No events yet.</div>';
     return;
   }
   let h = "";
-  snap.forEach((d) => {
+  activeEvents.forEach((d) => {
     const e = d.data(),
       id = d.id;
-    allEvents.push({ id, ...e });
     const et = (e.title || "").replace(/'/g, "\\'"),
       el = (e.location || "").replace(/'/g, "\\'"),
       ed = (e.desc || "").replace(/'/g, "\\'").replace(/\n/g, "<br>");
@@ -4622,19 +5039,39 @@ function renderSortedActivityLogs() {
 }
 window.deleteEvent = function (id) {
   window.showConfirmPopup(
-    "Delete Event?",
-    "This removes all registrations.",
+    "Move Event to Trash?",
+    "Move this event and its registration records to Trash? You can restore them later.",
     async () => {
       window.showLoading();
       try {
-        await deleteDoc(doc(db, "events", id));
-        const ps = await getDocs(
+        const eventRef = doc(db, "events", id);
+        const eventSnapshot = await getDoc(eventRef);
+        if (!eventSnapshot.exists()) throw new Error("Event not found.");
+        const event = eventSnapshot.data();
+        const participants = await getDocs(
           query(collection(db, "participants"), where("eventId", "==", id)),
         );
-        const b = writeBatch(db);
-        ps.forEach((d) => b.delete(d.ref));
-        await b.commit();
-        window.showAdminAlert("Success", "Event deleted.", true);
+        const batch = writeBatch(db);
+        batch.update(eventRef, {
+          status: STATUS.TRASHED,
+          previousStatus: event.status || "Active",
+          trashedAt: serverTimestamp(),
+          trashedBy: getAdminDisplayName(),
+          trashedById: loggedInAdmin?.id || "system",
+        });
+        participants.forEach((participant) => {
+          const data = participant.data();
+          if (data.status === STATUS.TRASHED) return;
+          batch.update(participant.ref, {
+            status: STATUS.TRASHED,
+            previousStatus: data.status || STATUS.REGISTERED,
+            trashedAt: serverTimestamp(),
+            trashedBy: getAdminDisplayName(),
+            trashedById: loggedInAdmin?.id || "system",
+          });
+        });
+        await batch.commit();
+        window.showAdminAlert("Moved to Trash", "Event and registrations moved to Trash.", true);
       } catch (e) {
         window.showAdminAlert("Error", e.message, false);
       } finally {
@@ -4776,11 +5213,21 @@ async function handleEditAnnouncementSubmit(e) {
 }
 
 window.deleteAnnouncement = function (id) {
-  window.showConfirmPopup("Delete?", "Delete this?", async () => {
+  window.showConfirmPopup("Move Announcement to Trash?", "Move this announcement to Trash?", async () => {
     window.showLoading();
     try {
-      await deleteDoc(doc(db, "announcements", id));
-      window.showAdminAlert("Success", "Deleted.", true);
+      const ref = doc(db, "announcements", id);
+      const snapshot = await getDoc(ref);
+      if (!snapshot.exists()) throw new Error("Announcement not found.");
+      const announcement = snapshot.data();
+      await updateDoc(ref, {
+        status: STATUS.TRASHED,
+        previousStatus: announcement.status || "Active",
+        trashedAt: serverTimestamp(),
+        trashedBy: getAdminDisplayName(),
+        trashedById: loggedInAdmin?.id || "system",
+      });
+      window.showAdminAlert("Moved to Trash", "Announcement moved to Trash.", true);
     } catch (e) {
       window.showAdminAlert("Error", e.message, false);
     } finally {
@@ -4815,6 +5262,7 @@ const TAB_TITLES_ADMIN = {
   hours: "Service Hours",
   donations: "Donations",
   residents: "Residents Registry",
+  trash: "Trash",
 };
 
 window.switchTab = function (tabId) {
@@ -5188,7 +5636,7 @@ function openDonationScreenshotModal(donationId) {
     if (isEligibleForRefund(donation)) {
       btns += `<button type="button" onclick="refundDonationRecord('${donation.id}', '${(donation.donorName || 'Donor').replace(/'/g, "\\'")}', '${donation.amount ? '₱' + parseFloat(donation.amount).toLocaleString() : ''}', '${(donation.paymentMethod || '').replace(/'/g, "\\'")}')" class="text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 px-3 py-2 rounded-xl shadow-sm flex items-center gap-1.5 ml-2"><i class="fa-solid fa-rotate-left"></i>Refund (3 Days)</button>`;
     }
-    btns += `<button type="button" onclick="deleteDonationRecord('${donation.id}', '${(donation.donorName || 'Donor').replace(/'/g, "\\'")}')" class="text-xs font-semibold bg-slate-100 text-rose-600 hover:bg-rose-50 border border-rose-200 px-3 py-2 rounded-xl shadow-sm flex items-center gap-1.5 ml-2"><i class="fa-solid fa-trash-can"></i>Delete Record</button>`;
+    btns += `<button type="button" onclick="deleteDonationRecord('${donation.id}', '${(donation.donorName || 'Donor').replace(/'/g, "\\'")}')" class="text-xs font-semibold bg-slate-100 text-rose-600 hover:bg-rose-50 border border-rose-200 px-3 py-2 rounded-xl shadow-sm flex items-center gap-1.5 ml-2"><i class="fa-solid fa-trash-can"></i>Move to Trash</button>`;
     actionsLeft.innerHTML = btns;
   }
 
